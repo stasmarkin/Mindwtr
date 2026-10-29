@@ -84,7 +84,7 @@ import { isNativeJsonWithinBytes } from './native-host-contract-task-view';
 import { useTaskStore } from './store';
 import { getDigestSchedule } from './schedule-utils';
 import { shouldSendTaskReminders } from './task-reminder-policy';
-import type { NotificationSettings, Task } from './types';
+import type { NotificationSettings, Project, Task } from './types';
 
 export type NativeReminderAlarm = {
     key: string;
@@ -372,13 +372,18 @@ export function createReminderMethods(deps: ReminderDeps) {
             const requests = new Map([...plan.recurring, ...plan.oneShot].map((request) => [request.key, request]));
             const nowMs = Date.now();
             // Delivered reminders it remembers: withdrawn by core's rule for a held alarm, else kept (up to 30 days), their ids taken.
+            // The store's tasks and projects by id, built on first use (a delivered reminder or a Snooze to judge), once for both uses.
+            let taskById: Map<string, Task> | null = null;
+            let projectById: Map<string, Project> | null = null;
+            const tasksById = () => taskById ??= new Map(state.tasks.map((task) => [task.id, task]));
+            const projectsById = () => projectById ??= new Map(state.projects.map((project) => [project.id, project]));
             const judge = plan.mode === 'active'
-                ? { settings: state.settings, diagnostics: plan.diagnostics, tasks: new Map(state.tasks.map((task) => [task.id, task])), projects: new Map(state.projects.map((project) => [project.id, project])) }
+                ? { settings: state.settings, diagnostics: plan.diagnostics, get tasks() { return tasksById(); }, get projects() { return projectsById(); } }
                 : null;
             const remembered: NativeReminderState = new Map();
             const withdrawnDelivered: NativeReminderAlarmPlan['cancel'] = [];
             const snoozes: NativeReminderAlarm[] = [];
-            const owners = { tasks: new Map(state.tasks.map((task) => [task.id, task])), projects: new Map(state.projects.map((project) => [project.id, project])) };
+            const owners = { get tasks() { return tasksById(); }, get projects() { return projectsById(); } };
             // The host's ledger, when it has one (Android): the alarms that showed, and the notifications still in the tray.
             const fired = new Set(input.fired ?? []);
             const shown = input.shown ? new Set(input.shown) : null;

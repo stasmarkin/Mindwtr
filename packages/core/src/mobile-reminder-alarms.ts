@@ -342,11 +342,14 @@ export function planReminderAlarms(input: ReminderAlarmPlanInput): ReminderAlarm
     const recurring = requests.filter((request) => request.repeatInterval).map(toReminderAlarmRequest);
     const oneShot = requests.filter((request) => !request.repeatInterval).map(toReminderAlarmRequest);
     const requested = new Set([...recurring, ...oneShot].map((request) => request.key));
+    // Built on first use: only a held alarm is judged (getActiveCancelReason), so a plan holding none builds neither map.
+    let taskById: Map<string, Task> | null = null;
+    let projectById: Map<string, Project> | null = null;
     const context = {
         settings: input.settings,
         diagnostics,
-        tasks: new Map(input.tasks.map((task) => [task.id, task])),
-        projects: new Map(input.projects.map((project) => [project.id, project])),
+        get tasks() { return taskById ??= new Map(input.tasks.map((task) => [task.id, task])); },
+        get projects() { return projectById ??= new Map(input.projects.map((project) => [project.id, project])); },
     };
     const nowMs = input.now.getTime();
     const shifted = held.filter((key) => {

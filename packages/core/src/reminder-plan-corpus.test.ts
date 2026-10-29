@@ -196,3 +196,23 @@ describe('reminder plan corpus (frozen before the plan was trimmed)', () => {
         expect(snoozes).toBeGreaterThan(20);
     }, 240_000);
 });
+
+// The plan's lookup maps (getActiveCancelReason's tasks and projects by id) are built only when a held alarm is judged.
+describe('planReminderAlarms lookup maps', () => {
+    it('builds no task or project map for a plan that holds no alarm, and both once an alarm is held', async () => {
+        const translations = await loadTranslations('en');
+        let mapped = 0;
+        class Counted<T> extends Array<T> {
+            override map<U>(callback: (value: T, index: number, array: T[]) => U): U[] { mapped += 1; return Array.from(this, callback); }
+        }
+        const AT = '2026-01-01T00:00:00.000Z';
+        const tasks = Counted.from([{ id: 't1', title: 'Call', status: 'next', tags: [], contexts: [], createdAt: AT, updatedAt: AT, dueDate: '2026-10-29T10:00:00Z' }]) as unknown as Task[];
+        const projects = Counted.from([{ id: 'p1', title: 'P', status: 'active', color: '#94a3b8', createdAt: AT, updatedAt: AT }]) as unknown as Project[];
+        const input = { settings: {} as AppSettings, tasks, projects, now: new Date('2026-10-28T10:00:00Z'), translations, maxOneShotReminders: 200, permissionGranted: true };
+        const plan = planReminderAlarms({ ...input, alarms: new Map() });
+        expect(plan.schedule.length).toBeGreaterThan(0);
+        expect(mapped).toBe(0);
+        planReminderAlarms({ ...input, alarms: new Map([['task:gone', { id: 1, signature: 'x', fireAtMs: Date.parse('2026-10-28T09:00:00Z') }]]) });
+        expect(mapped).toBe(1);
+    });
+});
