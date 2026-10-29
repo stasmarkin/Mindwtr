@@ -503,6 +503,10 @@ export function buildReminderSchedule(input: ReminderScheduleInput): ReminderSch
 
     if (taskRemindersEnabled) {
         for (const task of tasks) {
+            // A task with no due, start or review value has no reminder and adds to no count below (every intent and every
+            // count reads one of the three): skipped before the per-task work, which at 5,000 tasks costs the engine most of
+            // the plan on Android.
+            if (!task.dueDate && !task.startTime && !task.reviewAt) continue;
             // Single pass: the diagnostic classification below and the plan that produces the
             // actual request both read this same task/now/options, in the same iteration, so
             // they cannot disagree with each other the way two separate traversals could.

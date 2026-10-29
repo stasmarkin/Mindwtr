@@ -238,3 +238,29 @@ describe('planReminderAlarms lookup maps', () => {
         expect(mapped).toBe(1);
     });
 });
+
+// The undated skip in buildReminderSchedule rests on one rule: a task's reminders and counts come only from dueDate,
+// startTime and reviewAt. A dateless task with every other reminder field set plans and counts nothing; and every task date
+// the planner parses is one of those three, so a new date source fails here until the skip names it too.
+describe('the undated skip in the reminder plan', () => {
+    it('plans and counts nothing for a dateless task with every other reminder field set', async () => {
+        const translations = await loadTranslations('en');
+        const AT = '2026-01-01T00:00:00.000Z';
+        const dateless = { id: 't', title: 'T', status: 'next', tags: [], contexts: [], createdAt: AT, updatedAt: AT,
+            recurrence: { rule: 'daily', strategy: 'strict' }, dueReminderLeadMinutes: 60, repeatReminderMinutes: 10,
+            relativeStartOffset: { value: 1, unit: 'days' }, reminderPolicy: 'send', isFocusedToday: true, priority: 'high' } as unknown as Task;
+        const input = { settings: { dailyDigestMorningEnabled: false } as AppSettings, tasks: [dateless], projects: [], translations,
+            maxOneShotReminders: 200, alarms: new Map(), permissionGranted: true, now: new Date('2026-10-28T10:00:00Z') };
+        const plan = planReminderAlarms(input);
+        expect(plan.oneShot).toEqual([]);
+        expect(Object.entries(plan.diagnostics ?? {}).filter(([key, value]) => key.endsWith('Count') && value !== 0)).toEqual([]);
+    });
+
+    it('reads task dates only from dueDate, startTime and reviewAt', () => {
+        const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'schedule-utils.ts'), 'utf8');
+        const read = new Set([...source.matchAll(/(?:parseExplicitReminderDate|hasTimeComponent|safeParseDate|safeParseDueDate)\(task\.(\w+)/g)].map((match) => match[1]));
+        const candidates = new Set([...source.matchAll(/addCandidate\(\s*'\w+',\s*task\.(\w+)/g)].map((match) => match[1]));
+        expect([...read, ...candidates].filter((field) => !['dueDate', 'startTime', 'reviewAt'].includes(field))).toEqual([]);
+        expect(source).toContain('if (!task.dueDate && !task.startTime && !task.reviewAt) continue;');
+    });
+});
