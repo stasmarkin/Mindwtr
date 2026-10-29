@@ -29,7 +29,7 @@ const localDay = (at: Date) => `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${
 const localDateTime = (at: Date) => `${localDay(at)}T${pad(at.getHours())}:${pad(at.getMinutes())}:00`;
 
 /** Dated, undated, recurring, start-only, due-only, review, lead and repeat minutes; values clustered around [from, to). */
-function store(count: number, from: number, to: number, seed: number): { tasks: Task[]; projects: Project[] } {
+function store(count: number, from: number, to: number, seed: number, datedShare = 0.5): { tasks: Task[]; projects: Project[] } {
     const next = random(seed);
     const pick = <T,>(values: readonly T[]) => values[Math.floor(next() * values.length)];
     const instant = () => new Date(from - 2 * 24 * 60 * MINUTE + Math.floor(next() * (to - from + 4 * 24 * 60 * MINUTE) / MINUTE) * MINUTE);
@@ -46,13 +46,14 @@ function store(count: number, from: number, to: number, seed: number): { tasks: 
     const tasks: Task[] = Array.from({ length: count }, (_, index) => {
         const status = pick(['next', 'next', 'next', 'inbox', 'waiting', 'someday', 'done', 'reference'] as const);
         const shape = next();
-        // About half undated, as a real library: the rest due-only, start-only, both, or review-only.
-        const dated = shape < 0.5 ? {} : shape < 0.65 ? { dueDate: date() } : shape < 0.75 ? { startTime: date() }
-            : shape < 0.9 ? { dueDate: date(), startTime: date() } : { reviewAt: date() };
+        // [datedShare] of the tasks dated (half by default, as a real library): due-only, start-only, both, or review-only.
+        const kind = next();
+        const dated = shape >= datedShare ? {} : kind < 0.3 ? { dueDate: date() } : kind < 0.5 ? { startTime: date() }
+            : kind < 0.8 ? { dueDate: date(), startTime: date() } : { reviewAt: date() };
         return {
             id: `t${index}`, title: `Task ${index}`, status, tags: [], contexts: [], createdAt: AT, updatedAt: AT,
             ...dated,
-            ...(next() < 0.1 ? { reviewAt: date() } : {}),
+            ...(shape < datedShare && next() < 0.1 ? { reviewAt: date() } : {}),
             ...(next() < 0.08 ? { recurrence: { rule: pick(['daily', 'weekly', 'monthly'] as const), strategy: pick(['strict', 'fluid'] as const) } } : {}),
             ...(next() < 0.1 ? { dueReminderLeadMinutes: pick([5, 15, 60, 1440]) } : {}),
             ...(next() < 0.05 ? { repeatReminderMinutes: pick([10, 30]) } : {}),
@@ -140,6 +141,27 @@ describe('reminder plan corpus (frozen before the plan was trimmed)', () => {
             }
         }
         // The corpus plans real alarms.
+        expect(requests).toBeGreaterThan(1000);
+    }, 120_000);
+
+    // Old against new in three shapes: no task dated, about 20% dated, every task dated (lead minutes, repeats and recurrence
+    // also on undated tasks, which must schedule and count nothing).
+    it('core planReminderAlarms on 5,000-task stores with no, 20% and all tasks dated', () => {
+        process.env.TZ = ZONE;
+        const saved = frozen();
+        let requests = 0;
+        for (const [shapeName, share] of [['none dated', 0], ['20% dated', 0.2], ['all dated', 1]] as const) {
+            const data = store(5000, new Date(2026, 2, 6).getTime(), new Date(2026, 10, 2).getTime(), 13, share);
+            for (const [settingsName, settings] of SETTINGS.slice(0, 2)) {
+                for (const [instantName, now] of INSTANTS().filter((_, index) => index % 2 === 0)) {
+                    const input = { settings: settings as AppSettings, tasks: data.tasks, projects: data.projects, translations, maxOneShotReminders: 200 };
+                    const earlier = planReminderAlarms({ ...input, now: new Date(now.getTime() - 60 * MINUTE), alarms: new Map(), permissionGranted: true });
+                    const plan = planReminderAlarms({ ...input, now, alarms: heldFrom(earlier), permissionGranted: true });
+                    requests += plan.oneShot.length;
+                    check(`shape ${shapeName} ${settingsName} ${instantName}`, plan, saved);
+                }
+            }
+        }
         expect(requests).toBeGreaterThan(1000);
     }, 120_000);
 
