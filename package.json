@@ -1,0 +1,27 @@
+{
+  "name": "mw",
+  "version": "0.1.0",
+  "description": "Command-line client for the self-hosted Mindwtr Cloud API",
+  "license": "MIT",
+  "type": "module",
+  "packageManager": "pnpm@10.24.0",
+  "engines": {
+    "node": ">=25"
+  },
+  "bin": {
+    "mw": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "skill"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && chmod +x dist/cli.js",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test 'src/**/*.test.ts'"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.8",
+    "typescript": "^7.0.2"
+  }
+}
