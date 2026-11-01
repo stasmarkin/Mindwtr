@@ -52,7 +52,7 @@ describe('Markdown', () => {
                 <Markdown markdown={'3. first\n7) **second**\n007. `third`\n9) [link](https://example.com)'} />
             </LanguageProvider>
         );
-        const items = Array.from(container.querySelectorAll('ol > li'));
+        const items = Array.from(container.querySelectorAll<HTMLLIElement>('ol > li'));
         expect(items).toHaveLength(4);
         expect(items.map((item) => item.firstElementChild?.textContent)).toEqual(['3.', '7)', '007.', '9)']);
         expect(items[0]?.lastElementChild?.textContent).toBe('first');
@@ -80,7 +80,7 @@ describe('Markdown', () => {
                 <Markdown markdown={'1. parent\n  4) child\n\t2. grandchild'} />
             </LanguageProvider>
         );
-        const items = Array.from(container.querySelectorAll('ol > li'));
+        const items = Array.from(container.querySelectorAll<HTMLLIElement>('ol > li'));
         expect(items.map((item) => item.style.marginLeft)).toEqual(['', '14px', '28px']);
     });
 
