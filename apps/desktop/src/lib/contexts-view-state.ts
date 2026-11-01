@@ -6,7 +6,7 @@ export const CONTEXTS_VIEW_STATE_STORAGE_KEY = 'mindwtr:view:contexts:v1';
 export const NO_CONTEXT_TOKEN = '__no_context__';
 export const CONTEXTS_TOKEN_SELECTION_EVENT = 'mindwtr:contexts-token-selection';
 
-const CONTEXT_STATUS_VALUES: TaskStatus[] = ['inbox', 'next', 'waiting', 'someday', 'reference', 'done'];
+const CONTEXT_STATUS_VALUES: TaskStatus[] = ['inbox', 'next', 'waiting', 'someday', 'reference', 'done', 'archived'];
 const LEGACY_CONTEXT_STATUS_VALUES: Array<TaskStatus | 'all'> = ['all', ...CONTEXT_STATUS_VALUES];
 
 // The dropdown this sanitizer has to agree with is CONTEXTS_AXES, so read that

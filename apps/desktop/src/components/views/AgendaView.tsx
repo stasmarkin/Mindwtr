@@ -526,7 +526,7 @@ export function AgendaView() {
         timeEstimates: selectedTimeEstimates,
         toggleEnergyLevel: toggleEnergyFilter,
         togglePriority: togglePriorityFilter,
-        toggleProject: toggleProjectFilter,
+        cycleProject: toggleProjectFilter,
         toggleTimeEstimate: toggleTimeFilter,
         toggleToken: toggleTokenFilter,
         tokens: selectedTokens,
@@ -1195,6 +1195,7 @@ export function AgendaView() {
                     saveFilterLabel={resolveText('savedFilters.save', 'Save')}
                     selectedEnergyLevels={selectedEnergyLevels}
                     selectedProjects={selectedProjects}
+                    excludedProjects={filterSelections.excludedProjects}
                     selectedPriorities={selectedPriorities}
                     selectedTimeEstimates={selectedTimeEstimates}
                     selectedTokens={selectedTokens}

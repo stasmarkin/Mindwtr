@@ -435,6 +435,8 @@ export const svOverrides: Record<string, string> = {
         'taskEdit.aiAssistant': 'AI-assistent',
         'task.dateIssue.startAfterDue': 'Startar efter förfallodatum',
         'taskEdit.checklist': 'Checklista',
+        'savedFilters.saveTitle': "Spara filter",
+        'savedFilters.namePlaceholder': "Filternamn",
         'taskEdit.tab.task': 'Uppgift',
         'taskEdit.tab.list': 'Lista',
         'taskEdit.tab.view': 'Vy',

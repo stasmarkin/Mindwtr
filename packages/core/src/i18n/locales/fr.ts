@@ -1213,6 +1213,8 @@ export const frOverrides: Record<string, string> = {
   'settings.syncPreferenceGtd': 'Paramètres et valeurs par défaut GTD',
         'settings.syncPreferenceExternalCalendars': 'URL de calendriers externes',
         'settings.syncPreferenceSavedFilters': 'Filtres enregistrés',
+        'savedFilters.saveTitle': "Enregistrer le filtre",
+        'savedFilters.namePlaceholder': "Nom du filtre",
         'settings.syncPreferenceAi': 'Paramètres de l’IA (modèles, fournisseurs)',
         'settings.syncPreferenceAiHint': 'Les clés API et les chemins de modèle locaux ne sont jamais synchronisés.',
         'settings.lastSync': 'Dernière synchronisation',

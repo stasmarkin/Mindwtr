@@ -16704,6 +16704,7 @@ private final class Engine: @unchecked Sendable {
         guard let operation = value as? [String: Any], let type = operation["type"] as? String else { return false }
         switch type {
         case "save": return Set(operation.keys) == Set(["type"])
+            || (Set(operation.keys) == Set(["type", "view"]) && operation["view"] as? String == "contexts")
         case "delete":
             return Set(operation.keys) == Set(["type", "id"])
                 && (operation["id"] as? String).map({ !$0.isEmpty && $0.utf16.count <= 500 }) == true
@@ -16715,7 +16716,9 @@ private final class Engine: @unchecked Sendable {
     }
 
     private func validateFocusSavedFilterResult(_ result: [String: Any], request: [String: Any]) throws {
-        guard Set(result.keys) == Set(["controls", "id"]),
+        let contexts = (request["operation"] as? [String: Any])?["view"] as? String == "contexts"
+        guard Set(result.keys) == (contexts ? Set(["controls", "id", "view"]) : Set(["controls", "id"])),
+              !contexts || result["view"] as? String == "contexts",
               result["controls"] is [String: Any],
               let id = result["id"] as? String, !id.isEmpty, id.utf16.count <= 500,
               let operation = request["operation"] as? [String: Any],
@@ -24232,7 +24235,8 @@ private final class Engine: @unchecked Sendable {
                 }
             }
             if name == "contexts" {
-                let fields = Set(["tokens", "matchMode", "searchQuery", "offset", "limit", "revision"])
+                let fields = Set(["tokens", "matchMode", "searchQuery", "offset", "limit", "revision",
+                                  "filters", "filterEdit", "savedFilterId", "preservedCriteria", "filterSheetOpen", "filterPicker"])
                 guard Set(input.keys).isSubset(of: fields) else {
                     throw HostFailure("Unsupported native Contexts browsing input")
                 }

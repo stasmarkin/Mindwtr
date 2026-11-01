@@ -168,6 +168,12 @@ function buildSavedFilterList(filter: SavedFilter, context: WidgetListContext): 
     const pool = status ? activeTasks.filter((task) => task.status === status) : activeTasks;
     const projects = data.projects || [];
     const matched = applyFilter(pool, filter.criteria, { projects, tokenMatchMode: 'all', now: context.now });
+    if (filter.criteria.excludedProjects?.length || ((filter.view === 'contexts' || filter.view === 'all') && filter.criteria.statuses?.length)) {
+        try { logInfo('Context filter projected for widget', { scope: 'widget-lists', category: 'unknown', force: true, context: {
+            releaseCheck: 'v1.3.8/context-filter-criteria', count: matched.length, outcome: 'projected',
+            excludedProjectCount: filter.criteria.excludedProjects?.length ?? 0, selectionStatusCount: filter.criteria.statuses?.length ?? 0,
+        } }); } catch { /* Diagnostics cannot prevent widget publication. */ }
+    }
     if (filter.criteria.anyDateRange) {
         logInfo('Task date filter projected for widget', {
             scope: 'widget-lists',

@@ -1,5 +1,7 @@
 // Split from i18n-translations.ts to make community translation contributions easier.
 export const nlOverrides: Record<string, string> = {
+    'savedFilters.saveTitle': "Filter opslaan",
+    'savedFilters.namePlaceholder': "Filternaam",
     "settings.desktopAppLockDesc": "Vraag om Windows Hello of Touch ID (of je Mac-wachtwoord) wanneer Mindwtr opent en nadat je weg bent geweest. Dit verbergt alleen het app-venster; de macOS-widget, de lokale API en de MCP-server kunnen je gegevens nog steeds lezen.",
     "settings.desktopAppLockUnavailable": "Stel Windows Hello of een Mac-inlogwachtwoord in om de app-vergrendeling te gebruiken.",
     "appLock.lockNow": "Mindwtr vergrendelen",

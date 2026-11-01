@@ -12,6 +12,9 @@ struct ContextsScreen: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @FocusState private var searchFocused: Bool
+    @FocusState private var filterFocusedField: String?
+    @State private var filterPickerName = ""
+    @State private var filterPickerQuery = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -79,6 +82,17 @@ struct ContextsScreen: View {
             .scrollDismissesKeyboard(.interactively)
             .refreshable { endInput(); await model.refresh() }
         }
+        .sheet(isPresented: Binding(get: { model.contextsFilterSheetOpen }, set: { model.setContextsFilterSheet($0) })) {
+            VStack(alignment: .leading, spacing: 8) {
+                if model.contexts.flag("canSave") && filterPickerName.isEmpty {
+                    Button(model.label("common.save")) { Task { await model.openContextsSavedFilter() } }
+                        .rnFont(14, .semibold).foregroundStyle(palette.tint).frame(minHeight: 44)
+                        .disabled(!model.contextsControlsEnabled).accessibilityIdentifier("contexts-save-filter")
+                }
+                contextFilterControls
+            }
+            .padding(16).background(palette.card).presentationDetents([.medium, .large])
+        }
         .task(id: scenePhase == .active) {
             guard scenePhase == .active else { return }
             while !Task.isCancelled {
@@ -91,6 +105,32 @@ struct ContextsScreen: View {
 
     private var filters: some View {
         VStack(spacing: 0) {
+            HStack {
+                Button(model.label("filters.label")) {
+                    endInput(); filterPickerName = ""; filterPickerQuery = ""; model.setContextsFilterSheet(true)
+                }
+                .rnFont(13, .semibold).foregroundStyle(palette.tint).frame(minHeight: 44)
+                .disabled(!model.contextsControlsEnabled).accessibilityIdentifier("contexts-filters")
+                Spacer()
+            }.padding(.horizontal, 12)
+            let saved = model.contexts.object("savedFilters").objects("items")
+            if !saved.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(saved.indices, id: \.self) { index in
+                            let filter = saved[index]
+                            Button(filter.text("name")) {
+                                endInput(); model.selectContextsSavedFilter(filter.flag("selected") ? nil : filter.text("id"))
+                            }
+                            .rnFont(13, .semibold).padding(.horizontal, 12).frame(minHeight: 44)
+                            .background(filter.flag("selected") ? palette.tint : palette.filter, in: Capsule())
+                            .foregroundStyle(filter.flag("selected") ? palette.onTint : palette.text)
+                            .buttonStyle(.plain).disabled(!model.contextsControlsEnabled)
+                            .accessibilityAddTraits(filter.flag("selected") ? .isSelected : [])
+                        }
+                    }.padding(.horizontal, 12)
+                }
+            }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
                     let chips = model.contexts.objects("chips")
@@ -119,6 +159,30 @@ struct ContextsScreen: View {
         }
         .padding(.top, 4).padding(.bottom, 6).background(palette.card)
         .overlay(alignment: .bottom) { palette.border.frame(height: 1) }
+    }
+
+    private var contextFilterControls: some View {
+        var data = model.contexts
+        data["chips"] = model.contexts["filterChips"]
+        let state = model.contexts.object("filters").object("state")
+        return ListFilterControls(
+            data: data, strings: model.strings, palette: palette, prefix: "contexts",
+            enabled: model.contextsControlsEnabled, busy: model.busy, frozen: model.retryNeeded, error: model.contextsError,
+            searchText: Binding(get: { state.text("searchQuery") }, set: { model.editContextsFilter(["type": "setSearch", "value": $0]) }),
+            locationText: Binding(get: { state.text("location") }, set: { model.editContextsFilter(["type": "setLocation", "value": $0]) }),
+            pickerName: filterPickerName, picker: model.contextsFilterPicker, pickerCurrent: model.contextsControlsEnabled,
+            pickerEnabled: model.contextsControlsEnabled, pickerError: model.contextsError,
+            pickerQuery: Binding(get: { filterPickerQuery }, set: {
+                filterPickerQuery = $0; model.setContextsFilterPicker(name: filterPickerName, query: $0)
+            }),
+            onEdit: model.editContextsFilter,
+            onChipAction: { model.editContextsFilter($0.object("filterEdit")) }, onArchived: { _ in },
+            onOpenPicker: { name in filterPickerName = name; filterPickerQuery = ""; model.setContextsFilterPicker(name: name) },
+            onBack: { filterPickerName = ""; filterPickerQuery = ""; model.setContextsFilterPicker(name: nil) },
+            onMore: { model.setContextsFilterPicker(name: filterPickerName, query: filterPickerQuery, more: true) },
+            onRetry: model.retryContexts,
+            onRetryPicker: { model.setContextsFilterPicker(name: filterPickerName, query: filterPickerQuery) },
+            onClose: { model.setContextsFilterSheet(false) }, focusedField: $filterFocusedField)
     }
 
     // RN's chip (#1427): a tap switches to core's `next`; a token chip's long-press, also VoiceOver's

@@ -491,7 +491,7 @@ fun MenuDialogs(model: InboxViewModel) = with(model.menu) {
     val controls = if (list == "inbox") view?.optJSONObject("toolbar") else view
     when (open.optString("kind")) {
         "overflow" -> view?.let { OverflowFor(model, it, open) }
-        "filters" -> view?.let { FilterSheet(model.menu, it, open) }
+        "filters" -> view?.let { FilterSheet(model.menu, if (list == "contexts") JSONObject(it.toString()).put("chips", it.optJSONArray("filterChips") ?: JSONArray()) else it, open) }
         "sort" -> controls?.getJSONObject("sort")?.let { modal ->
             ChoiceModal(model, modal.getString("title"), modal.menuObjects("options").map { option ->
                 Choice(option.getString("label"), option.getBoolean("selected")) { sort(option.optJSONObject("edit")?.getString("sortBy") ?: option.getString("value")) }
@@ -506,7 +506,7 @@ fun MenuDialogs(model: InboxViewModel) = with(model.menu) {
         "bulkTag" -> AddTagDialog(model, open)
         "organize" -> OrganizeDialog(model, open)
         "move" -> MoveDialog(model, open)
-        "newSection", "addTask" -> CreateDialog(model, open)
+        "newSection", "addTask", "contextsSave" -> CreateDialog(model, open)
         "tokens" -> TokenPicker(model, open)
         "startReview", "reviewMove", "reviewTag" -> ReviewDialog(model, open)
         "projectTask" -> ProjectTaskPrompt(model, open)
@@ -658,7 +658,7 @@ internal fun FilterSheet(host: FilterSheetHost, view: JSONObject, open: JSONObje
                         modifier = Modifier.fillMaxWidth().padding(vertical = 28.dp))
                     for (option in options) {
                         val label = option.optString("title").ifEmpty { option.getString("value") }
-                        val out = option.optString("state") == "excluded"
+                        val out = option.optString("state") == "excluded" || option.optBoolean("excluded")
                         val on = option.optString("state") == "included" || option.optBoolean("selected")
                         Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).hairline(c.border, top = false)
                             .selectable(selected = on, enabled = idle, role = Role.Button) { filterEdit(option.getJSONObject("edit")) }
@@ -708,6 +708,11 @@ internal fun FilterSheet(host: FilterSheetHost, view: JSONObject, open: JSONObje
                         }
                     }
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        val statuses = filters.menuObjects("statuses")
+                        if (statuses.isNotEmpty()) {
+                            SheetLabel(t("taskEdit.statusLabel"))
+                            ChipFlow(statuses, idle) { filterEdit(it) }
+                        }
                         filters.optJSONObject("taskDates")?.let { dates ->
                             Disclosure(dates.getString("label"), dates.menuObjects("options"), all, open.optBoolean("taskDates"), idle,
                                 { toggleDisclosure("taskDates") }) { filterEdit(it) }
@@ -719,7 +724,7 @@ internal fun FilterSheet(host: FilterSheetHost, view: JSONObject, open: JSONObje
                         }
                         val projects = collection("projects")
                         if (projects.isNotEmpty()) {
-                            val chosen = projects.chosenLabels().joinToString(", ")
+                            val chosen = projects.chosenLabels(excluded).joinToString(", ")
                             OverviewRow(t("filters.projects"), chosen.ifEmpty { all }, all, null) { dialogPage("projects") }
                         }
                         val estimates = filters.menuObjects("timeEstimates")
@@ -760,7 +765,14 @@ internal fun FilterSheet(host: FilterSheetHost, view: JSONObject, open: JSONObje
 
 private fun JSONArray?.strings(): List<String> = this?.let { list -> List(list.length()) { list.getString(it) } }.orEmpty()
 /** The labels of the options core marks selected, in core's order. */
-private fun List<JSONObject>.chosenLabels(): List<String> = mapNotNull { option -> option.optString("title").ifEmpty { option.optString("label") }.takeIf { option.optBoolean("selected") } }
+private fun List<JSONObject>.chosenLabels(excludedLabel: String? = null): List<String> = mapNotNull { option ->
+    val label = option.optString("title").ifEmpty { option.optString("label") }
+    when {
+        excludedLabel != null && option.optBoolean("excluded") -> "$excludedLabel: $label"
+        option.optBoolean("selected") -> label
+        else -> null
+    }
+}
 
 @Composable
 internal fun SheetLabel(text: String) = Text(text.uppercase(), style = rnText(12, 600, letterSpacing = 0.4f), color = LocalTheme.current.colors.secondaryText)
@@ -919,16 +931,17 @@ private fun CreateDialog(model: InboxViewModel, open: JSONObject) = with(model.m
     val theme = LocalTheme.current
     val c = theme.colors
     val section = open.getString("kind") == "newSection"
+    val contextsSave = open.getString("kind") == "contextsSave"
     val action = createAction()
     val owed = model.failedAction != null && model.failedAction == action
     val canSave = action != null && model.writable && !model.busy && (model.failedAction == null || owed)
     val addText = page?.view?.optJSONObject("text")?.optJSONObject("addTask")
     DialogCard(model, dismissible = false) {
-        Text(if (section) t("viewSections.add") else open.getString("title"), style = rnText(17, 700), color = c.text, modifier = Modifier.semantics { heading() })
+        Text(if (section) t("viewSections.add") else if (contextsSave) t("savedFilters.saveTitle") else open.getString("title"), style = rnText(17, 700), color = c.text, modifier = Modifier.semantics { heading() })
         val focus = remember { FocusRequester() }
         LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
-        val label = if (section) t("viewSections.nameHint") else addText?.getString("inputLabel").orEmpty()
-        val placeholder = if (section) t("viewSections.namePlaceholder") else addText?.getString("placeholder").orEmpty()
+        val label = if (section) t("viewSections.nameHint") else if (contextsSave) t("savedFilters.namePlaceholder") else addText?.getString("inputLabel").orEmpty()
+        val placeholder = if (section) t("viewSections.namePlaceholder") else if (contextsSave) t("savedFilters.namePlaceholder") else addText?.getString("placeholder").orEmpty()
         val shape = RoundedCornerShape(8.dp)
         val text = open.optString("text")
         BasicTextField(text, { typeDialog(it) }, enabled = !owed && !model.busy, singleLine = true, textStyle = rnText(16, 400).copy(color = c.text),

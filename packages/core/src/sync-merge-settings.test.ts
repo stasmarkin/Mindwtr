@@ -490,6 +490,18 @@ describe('mergeSettingsForSync > savedFilters', () => {
         at,
     );
 
+    it('preserves Context project exclusions against an omitted field and converges on a second merge', () => {
+        const legacy = { ...older, view: 'contexts', criteria: { contexts: ['@person/emma'], statuses: ['next', 'someday'] } };
+        const complete = { ...legacy, criteria: { ...legacy.criteria, excludedProjects: ['project-excluded'] } };
+        const local = settingsWith([complete], OLDER);
+        const remote = settingsWith([legacy], OLDER);
+        const merged = mergeSettingsForSync(local, remote);
+        expect(merged.savedFilters).toEqual([complete]);
+        expect(mergeSettingsForSync(remote, local).savedFilters).toEqual([complete]);
+        expect(mergeSettingsForSync(merged, merged).savedFilters).toEqual([complete]);
+        expect(mergeSettingsForSync({}, remote).savedFilters?.[0]?.criteria).not.toHaveProperty('excludedProjects');
+    });
+
     it('keeps every filter as stored when the peer did not change them', () => {
         const merged = mergeSettingsForSync(settingsWith(stored, OLDER), settingsWith(stored, OLDER));
 

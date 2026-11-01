@@ -15,6 +15,7 @@ import java.util.Collections
  */
 val LABEL_KEYS = listOf(
     "tab.inbox", "tab.next", "nav.projects",
+    "savedFilters.saveTitle", "savedFilters.namePlaceholder",
     "nav.addTask", "quickAdd.inputLabel", "quickAdd.bulkImportTextFile", "quickAdd.bulkImportTextFileLabel", "common.more", "common.retry", "common.done", "common.edit", "common.back",
     "agenda.laterToday",
     "common.cancel", "common.close", "common.save", "common.ok", "common.clear", "common.discard",

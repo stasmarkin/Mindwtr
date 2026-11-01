@@ -286,7 +286,7 @@ export function buildFocusAdvancedFilterChips(input: {
         getAreaLabel: (areaId) => input.areaById.get(areaId)?.name,
         resolveText: (key, fallback) => tFallback(input.t, key, fallback),
         ...(input.formatDate ? { formatDate: input.formatDate } : {}),
-    }).filter((chip) => chip.id !== 'anyDateRange').map((chip) => ({ id: `advanced:${chip.id}`, criterionId: chip.id, label: chip.label }));
+    }).filter((chip) => chip.id !== 'anyDateRange' && !chip.id.startsWith('excluded-project:')).map((chip) => ({ id: `advanced:${chip.id}`, criterionId: chip.id, label: chip.label }));
 }
 
 /**
@@ -480,6 +480,8 @@ export function resolveFocusFilterState(
         tokens: state.tokens,
         excludedTokens: state.excludedTokens,
         projects: state.projects,
+        excludedProjects: state.excludedProjects,
+        statuses: state.statuses,
         locations: visibility.location && state.location.trim() ? [state.location.trim()] : [],
         priorities: visibility.priority ? state.priorities : [],
         energyLevels: visibility.energyLevel ? state.energyLevels : [],
@@ -509,7 +511,7 @@ export function resolveFocusFilterState(
         hasActive: activeCount > 0,
         hasCurrentCriteria,
         canSave: savedFilterId === null && hasCurrentCriteria,
-        chips: activeSavedFilter ? resolved.chips.filter((chip) => chip.id !== 'location') : resolved.chips,
+        chips: resolved.chips.filter((chip) => !chip.id.startsWith('status:') && (!activeSavedFilter || chip.id !== 'location')),
         showContextMatchMode: resolved.showContextMatchMode,
         showTagMatchMode: resolved.showTagMatchMode,
     };
@@ -528,13 +530,15 @@ export type FocusControlEdit =
 /** Applying a saved filter: its criteria become the selections, its sort the screen's sort. */
 export function applyFocusSavedFilter(state: FocusControlState, filter: SavedFilter): FocusControlState {
     const selections = selectionsFromCriteria(filter.criteria);
-    const { anyDateRange: _previousDate, ...filters } = state.filters;
+    const { anyDateRange: _previousDate, excludedProjects: _previousExcludedProjects, statuses: _previousStatuses, ...filters } = state.filters;
     return {
         filters: {
             ...filters,
             tokens: selections.tokens,
             excludedTokens: selections.excludedTokens,
             projects: selections.projects,
+            ...(selections.excludedProjects ? { excludedProjects: selections.excludedProjects } : {}),
+            ...(selections.statuses ? { statuses: selections.statuses } : {}),
             priorities: selections.priorities,
             energyLevels: selections.energyLevels,
             timeEstimates: selections.timeEstimates,
@@ -563,7 +567,7 @@ export function applyFocusControlEdit(
     switch (edit.type) {
         case 'filter': {
             if (edit.edit.type === 'clear') return DEFAULT_FOCUS_CONTROL_STATE;
-            const preserved = { ...(edit.edit.type === 'setAnyDateRange' && resolved.activeSavedFilter
+            const preserved = { ...(resolved.activeSavedFilter
                 ? rawSavedFilters.find((filter) => filter.id === resolved.activeSavedFilter!.id)?.criteria ?? resolved.activeSavedFilter.criteria
                 : state.preservedCriteria) };
             const forget = (...fields: (keyof FilterCriteria)[]) => { fields.forEach((field) => { delete preserved[field]; }); };
@@ -571,7 +575,10 @@ export function applyFocusControlEdit(
                 case 'setAnyDateRange': forget('anyDateRange'); break;
                 case 'removeToken':
                 case 'toggleToken': forget('contexts', 'tags', 'excludedContexts', 'excludedTags'); break;
-                case 'toggleProject': forget('projects'); break;
+                case 'toggleProject':
+                case 'cycleProject':
+                case 'removeProject': forget('projects', 'excludedProjects'); break;
+                case 'toggleStatus': forget('statuses'); break;
                 case 'togglePriority': forget('priority'); break;
                 case 'toggleEnergyLevel': forget('energy'); break;
                 case 'toggleTimeEstimate': forget('timeEstimates', 'timeEstimateRange'); break;
@@ -582,7 +589,7 @@ export function applyFocusControlEdit(
                 ...state,
                 filters: applyListFilterEdit(state.filters, edit.edit),
                 savedFilterId: edit.edit.type === 'setSearch' ? state.savedFilterId : null,
-                ...(state.preservedCriteria || (edit.edit.type === 'setAnyDateRange' && resolved.activeSavedFilter)
+                ...(state.preservedCriteria || resolved.activeSavedFilter
                     ? { preservedCriteria: preserved } : {}),
             };
         }
@@ -603,6 +610,7 @@ export function applyFocusControlEdit(
                 case 'projects': delete preservedCriteria.projects; filters.projects = []; break;
                 default:
                     if (edit.criterionId.startsWith('location:')) filters.location = '';
+                    if (edit.criterionId.startsWith('status:')) filters.statuses = filters.statuses?.filter((status) => status !== edit.criterionId.slice('status:'.length));
                     return { ...state, filters, preservedCriteria: removeAdvancedFilterCriteriaChip(preservedCriteria, edit.criterionId) };
             }
             return { ...state, filters, preservedCriteria };

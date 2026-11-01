@@ -17,6 +17,7 @@ import {
   type TaskMetadataFilterVisibility,
   type TaskPriority,
   type TimeEstimate,
+  type TaskStatus,
 } from '@mindwtr/core';
 import { ChevronDown, ChevronRight, ChevronUp, X } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -156,6 +157,7 @@ export type TaskFilterSheetActiveChip = {
 };
 
 type TaskFilterSheetProps = {
+  statusOptions?: readonly TaskStatus[];
   visible: boolean;
   onClose: () => void;
   selections: TaskFilterSelections;
@@ -196,6 +198,7 @@ export function TaskFilterSheet({
   overlay,
   hasAdditionalActiveFilters = false,
   additionalActiveChips = [],
+  statusOptions = [],
 }: TaskFilterSheetProps) {
   const safeAreaInsets = useSafeAreaInsets();
   const keyboardInset = useKeyboardInset(visible);
@@ -270,10 +273,10 @@ export function TaskFilterSheet({
   ], allLabel), [allLabel, excludedLabel, selections.excludedTokens, selections.tokens]);
   const projectSummary = useMemo(() => joinSummary(
     projectOptions
-      .filter((project) => selections.projects.includes(project.id))
-      .map((project) => project.title),
+      .filter((project) => selections.projects.includes(project.id) || selections.excludedProjects.includes(project.id))
+      .map((project) => selections.excludedProjects.includes(project.id) ? `${excludedLabel}: ${project.title}` : project.title),
     allLabel,
-  ), [allLabel, projectOptions, selections.projects]);
+  ), [allLabel, excludedLabel, projectOptions, selections.projects, selections.excludedProjects]);
   const timeSummary = joinSummary(
     selections.timeEstimates.map((estimate) => formatTimeEstimateLabel(estimate)),
     allLabel,
@@ -447,8 +450,8 @@ export function TaskFilterSheet({
       return renderPickerOption(
         item.title,
         selections.projects.includes(item.id),
-        false,
-        () => selections.toggleProject(item.id),
+        selections.excludedProjects.includes(item.id),
+        () => selections.cycleProject(item.id),
       );
     };
     const matchModeFooter = isTokenPicker ? (
@@ -597,6 +600,16 @@ export function TaskFilterSheet({
               {topContent}
 
               <View style={styles.overviewRows}>
+                {statusOptions.length > 0 ? (
+                  <View style={styles.controlGroup}>
+                    <Text style={[styles.sheetSectionLabel, { color: themeColors.secondaryText }]}>{t('taskEdit.statusLabel')}</Text>
+                    <View style={styles.sheetChipRow}>
+                      {statusOptions.map((status) => <FilterChip key={status} label={t(`status.${status}`)}
+                        selected={selections.statuses.includes(status)} themeColors={themeColors}
+                        onPress={() => selections.toggleStatus(status)} />)}
+                    </View>
+                  </View>
+                ) : null}
                 <View>
                   {renderOverviewRow({
                     label: t('filters.taskDates'),

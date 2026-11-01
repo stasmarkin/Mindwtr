@@ -328,6 +328,8 @@ export interface FilterCriteria {
     excludedContexts?: string[];
     areas?: string[];
     projects?: string[];
+    /** Stable project IDs whose tasks are excluded, even when also included. */
+    excludedProjects?: string[];
     tags?: string[];
     tagMatchMode?: MultiValueFilterMatchMode;
     /** Tags whose presence excludes a task, regardless of tagMatchMode. */

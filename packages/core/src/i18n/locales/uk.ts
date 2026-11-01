@@ -448,6 +448,8 @@ export const ukOverrides: Record<string, string> = {
     "taskEdit.aiAssistant": "AI помічник",
     "task.dateIssue.startAfterDue": "Починається після закінчення терміну",
     "taskEdit.checklist": "Контрольний список",
+    'savedFilters.saveTitle': "Зберегти фільтр",
+    'savedFilters.namePlaceholder': "Назва фільтра",
     "taskEdit.tab.task": "завдання",
     "taskEdit.tab.list": "Список",
     "taskEdit.tab.view": "Переглянути",

@@ -1252,6 +1252,8 @@ final class CoreModel: ObservableObject {
     @Published var expandedProjectSections: Set<String> = []
     @Published private(set) var contexts: CoreObject = [:]
     @Published private(set) var contextsSearchText = ""
+    @Published private(set) var contextsFilterSheetOpen = false
+    @Published private(set) var contextsFilterPicker: CoreObject = [:]
     @Published private(set) var savedSearchWriteOperation: CoreObject = [:]
     @Published private(set) var savedSearchWriteDialog: CoreObject = [:]
     @Published var savedSearchWriteName = ""
@@ -2509,6 +2511,7 @@ final class CoreModel: ObservableObject {
     private var areaDeleteOptionsCurrent = false
     private var contextsCaller: Surface = .inbox
     private var contextsSelection: CoreObject = [:]
+    private var contextsFilterPickerRequest: CoreObject = [:]
     private var contextsLoadedDepth = 50
     private var contextsGeneration = 0
     private var contextsReadTask: Task<Void, Never>?
@@ -3268,7 +3271,7 @@ final class CoreModel: ObservableObject {
             && areaManagerOptionsCurrent && areaDeleteReadError == nil && areaManagerProjectCompositionIdle
     }
     var contextsControlsEnabled: Bool {
-        ready && selectedSurface == .contexts && !contexts.isEmpty && !busy && !retryNeeded && !taskPresented && !areaPickerPresented
+        ready && selectedSurface == .contexts && !contexts.isEmpty && !busy && !retryNeeded && !taskPresented && !areaPickerPresented && !focusSavedFilterPresented
     }
     var contextsActionsEnabled: Bool { contextsControlsEnabled && contextsCurrent }
     var waitingActionsEnabled: Bool {
@@ -5714,8 +5717,14 @@ final class CoreModel: ObservableObject {
             } else if recovery.text("method") == "savedSearchCommit" {
                 selectedSurface = .inbox
             } else if recovery.text("method") == "focusSavedFilterCommit" {
-                selectedSurface = .focus
-                focusState = recovery.object("result").object("controls")
+                let result = recovery.object("result")
+                if result.text("view") == "contexts" {
+                    selectedSurface = .contexts
+                    contextsSelection = ["savedFilterId": result.text("id")]
+                } else {
+                    selectedSurface = .focus
+                    focusState = result.object("controls")
+                }
             } else if ["taskFocusCommit", "focusGroupWrite", "focusOrderCommit"].contains(recovery.text("method")) {
                 selectedSurface = .focus
             } else if recovery.text("method") == "taskListSortWrite" {
@@ -11886,6 +11895,7 @@ final class CoreModel: ObservableObject {
                     "settings.feedbackSubmit", "settings.feedbackSending", "settings.feedbackSent", "settings.feedbackFailed", "settings.feedbackUnavailable", "settings.feedbackUnavailableDesc",
                     "settings.feedbackOpenGitHubIssue", "settings.feedbackGitHubDesc", "settings.feedbackOpenGitHubDiscussion", "settings.feedbackRequired", "settings.feedbackInvalidEmail",
                     "settings.appleRemindersImport.appleReminders", "settings.appleRemindersImport.captureList", "settings.appleRemindersImport.chooseCaptureList", "settings.appleRemindersImport.deleteAfterImport", "settings.appleRemindersImport.deleteAfterImportDescription", "settings.appleRemindersImport.autoImport", "settings.appleRemindersImport.autoImportDescription", "settings.appleRemindersImport.importIncomplete", "settings.appleRemindersImport.importIncompleteDescription", "settings.appleRemindersImport.permissionRequired", "settings.appleRemindersImport.noListsFound", "settings.appleRemindersImport.importedCount", "settings.appleRemindersImport.skippedCount", "settings.appleRemindersImport.failedCount", "settings.appleRemindersImport.deletedCount", "settings.appleRemindersImport.deleteFailedCount",
+                    "savedFilters.saveTitle", "savedFilters.namePlaceholder",
                     "viewSections.add", "viewSections.nameHint", "viewSections.namePlaceholder", "viewSections.updateFailed"]
         let result = try await query("strings", [try json(keys)])
         guard let translated = result["strings"] as? CoreObject, translated.values.allSatisfy({ $0 is String }) else {
@@ -19450,6 +19460,55 @@ final class CoreModel: ObservableObject {
         requestContextsRead()
     }
 
+    func editContextsFilter(_ edit: CoreObject) {
+        guard contextsControlsEnabled else { return }
+        contextsIntents.append(["kind": "filter", "edit": edit])
+        contextsLoadedDepth = pageSize
+        requestContextsRead(delay: 0)
+    }
+
+    func selectContextsSavedFilter(_ id: String?) {
+        guard contextsControlsEnabled else { return }
+        contextsIntents.append(["kind": "savedFilter", "value": id as Any? ?? NSNull()])
+        contextsLoadedDepth = pageSize
+        requestContextsRead(delay: 0)
+    }
+
+    func setContextsFilterSheet(_ open: Bool) {
+        guard !busy, !retryNeeded else { return }
+        contextsFilterSheetOpen = open
+        if !open { contextsFilterPickerRequest = [:]; contextsFilterPicker = [:] }
+        requestContextsRead(delay: 0)
+    }
+
+    func setContextsFilterPicker(name: String?, query: String = "", more: Bool = false) {
+        guard !busy, !retryNeeded else { return }
+        guard let name else {
+            contextsFilterPickerRequest = [:]
+            contextsFilterPicker = [:]
+            return
+        }
+        guard ["projects", "tokens"].contains(name) else { return }
+        let matching = contextsFilterPicker.text("name") == name && contextsFilterPicker.text("query") == query
+        let offset = more && matching ? contextsFilterPicker.objects("items").count : 0
+        if offset == 0 { contextsFilterPicker = [:] }
+        contextsFilterPickerRequest = ["name": name, "query": query, "offset": offset, "limit": 100]
+        if offset > 0 { contextsFilterPickerRequest["revision"] = contexts.text("revision") }
+        requestContextsRead(delay: 0)
+    }
+
+    private func contextsSelectionAfter(_ view: CoreObject, previous: CoreObject) -> CoreObject {
+        var selection = previous
+        selection.merge(view.object("selection")) { _, new in new }
+        let filters = view.object("filters").object("state")
+        if !filters.isEmpty { selection["filters"] = filters }
+        if let preserved = view["preservedCriteria"] { selection["preservedCriteria"] = preserved }
+        else { selection.removeValue(forKey: "preservedCriteria") }
+        selection["savedFilterId"] = view["savedFilterId"] ?? NSNull()
+        selection.removeValue(forKey: "filterEdit")
+        return selection
+    }
+
     /// A chip tap, or with `additive` a token chip's long-press (#1427).
     func selectContextsChip(_ id: String, additive: Bool = false) {
         guard contextsControlsEnabled, contexts.objects("chips").contains(where: { $0.text("id") == id }) else { return }
@@ -19515,6 +19574,8 @@ final class CoreModel: ObservableObject {
         input["searchQuery"] = search
         input["offset"] = offset
         input["limit"] = limit
+        input["filterSheetOpen"] = contextsFilterSheetOpen
+        if !contextsFilterPickerRequest.isEmpty && offset == 0 { input["filterPicker"] = contextsFilterPickerRequest }
         if let revision { input["revision"] = revision }
         return try await query("menuRead", ["contexts", try json(input)])
     }
@@ -19542,16 +19603,34 @@ final class CoreModel: ObservableObject {
                 // Empty search keeps a queued chip reachable if typing hid it meanwhile.
                 for intent in intents {
                     if intent.text("kind") == "focus" {
-                        selection = ["tokens": [intent.text("value")], "matchMode": "all"]
+                        selection["tokens"] = [intent.text("value")]
+                        selection["matchMode"] = "all"
+                        selection["savedFilterId"] = NSNull()
+                        continue
+                    }
+                    if intent.text("kind") == "savedFilter" {
+                        selection["savedFilterId"] = intent["value"] ?? NSNull()
+                        selection["tokens"] = []
+                        selection["matchMode"] = "all"
+                        selection["filters"] = CoreObject()
+                        selection.removeValue(forKey: "preservedCriteria")
+                        continue
+                    }
+                    if intent.text("kind") == "filter" {
+                        selection["filterEdit"] = intent.object("edit")
+                        let edited = try await contextsPage(selection: selection, search: "")
+                        guard contextsReadAllowed(generation, ownsOperation: ownsOperation) else { return }
+                        selection = contextsSelectionAfter(edited, previous: selection)
                         continue
                     }
                     let controls = try await contextsPage(selection: selection, search: "")
                     guard contextsReadAllowed(generation, ownsOperation: ownsOperation) else { return }
-                    selection = controls.object("selection")
+                    selection = contextsSelectionAfter(controls, previous: selection)
                     if intent.text("kind") == "chip" {
                         if let chip = controls.objects("chips").first(where: { $0.text("id") == intent.text("value") }) {
                             let additive = chip.object("additive")
-                            selection = intent.flag("additive") && !additive.isEmpty ? additive.object("next") : chip.object("next")
+                            selection.merge(intent.flag("additive") && !additive.isEmpty ? additive.object("next") : chip.object("next")) { _, new in new }
+                            selection["savedFilterId"] = NSNull()
                         }
                     } else if let option = controls.object("matchMode").objects("options").first(where: { $0.text("mode") == intent.text("value") }) {
                         selection["matchMode"] = option.text("mode")
@@ -19566,7 +19645,7 @@ final class CoreModel: ObservableObject {
                 }
                 // Contexts revision covers data/time, not selection or chip search.
                 // Every staged page must use the same effective inputs as page zero.
-                selection = next.object("selection")
+                selection = contextsSelectionAfter(next, previous: selection)
                 var rows = next.objects("rows")
                 let target = min(depth, next.number("total"))
                 while rows.count < target {
@@ -19575,7 +19654,8 @@ final class CoreModel: ObservableObject {
                                                       limit: limit, revision: next.text("revision"))
                     guard contextsReadAllowed(generation, ownsOperation: ownsOperation) else { return }
                     guard page.text("revision") == next.text("revision"), page.number("total") == next.number("total"),
-                          page.objects("rows").count == limit, try json(page.object("selection")) == json(selection) else {
+                          page.objects("rows").count == limit,
+                          try json(contextsSelectionAfter(page, previous: selection)) == json(selection) else {
                         throw CocoaError(.coderReadCorrupt)
                     }
                     rows += page.objects("rows")
@@ -19584,12 +19664,31 @@ final class CoreModel: ObservableObject {
                 next["rows"] = rows
                 contextsSelection = selection
                 contextsIntents.removeAll()
+                let picker = next.object("filterPicker")
+                if !picker.isEmpty {
+                    var merged = picker
+                    if contextsFilterPickerRequest.number("offset") > 0,
+                       contextsFilterPicker.text("name") == picker.text("name"),
+                       contextsFilterPicker.text("query") == picker.text("query") {
+                        merged["items"] = contextsFilterPicker.objects("items") + picker.objects("items")
+                    }
+                    contextsFilterPicker = merged
+                    // Refreshes re-read the visible depth so deleted options cannot linger.
+                    contextsFilterPickerRequest["offset"] = 0
+                    contextsFilterPickerRequest["limit"] = max(1, min(100, merged.objects("items").count))
+                    contextsFilterPickerRequest.removeValue(forKey: "revision")
+                }
                 contexts = next
                 contextsCurrent = true
                 return
             } catch {
                 guard contextsReadAllowed(generation, ownsOperation: ownsOperation) else { return }
                 // Restart at zero once on an expired revision; never publish mixed pages.
+                if attempt == 0 && contextsFilterPickerRequest["revision"] != nil {
+                    contextsFilterPickerRequest.removeValue(forKey: "revision")
+                    contextsFilterPickerRequest["offset"] = 0
+                    contextsFilterPicker = [:]
+                }
                 if attempt == 1 { contextsError = error.localizedDescription }
             }
         }
@@ -33608,7 +33707,8 @@ final class CoreModel: ObservableObject {
                 if let acknowledgment { result = try decode(acknowledgment) }
                 else { result = try await query("focusSavedFilterRetryOutcome", [request]) }
                 try acknowledgeFocusSavedFilter(result)
-                await readFocus(ownsOperation: true)
+                if selectedSurface == .contexts { await readContexts(ownsOperation: true) }
+                else { await readFocus(ownsOperation: true) }
                 return
             }
             if let request = focusOrderRequest {
@@ -35062,6 +35162,18 @@ final class CoreModel: ObservableObject {
         await readFocusSavedFilterOptions()
     }
 
+    func openContextsSavedFilter() async {
+        guard contextsActionsEnabled, contexts.flag("canSave"), focusSavedFilterRequest == nil,
+              !contexts.object("saveControls").isEmpty else { return }
+        contextsFilterSheetOpen = false
+        focusSavedFilterOperation = ["type": "save", "view": "contexts"]
+        focusSavedFilterDialog = ["title": label("savedFilters.saveTitle"),
+            "placeholder": label("savedFilters.namePlaceholder"), "defaultName": label("nav.contexts"),
+            "saveLabel": label("common.save"), "cancelLabel": label("common.cancel")]
+        focusSavedFilterName = label("nav.contexts")
+        await readFocusSavedFilterOptions()
+    }
+
     func closeFocusSavedFilter() {
         guard !busy, !retryNeeded, focusSavedFilterRequest == nil else { return }
         focusSavedFilterOperation = [:]
@@ -35078,14 +35190,25 @@ final class CoreModel: ObservableObject {
         focusSavedFilterOptions = [:]
         defer { finishOperation() }
         do {
-            focusReadTask?.cancel()
-            focusGeneration += 1
-            await readFocus(ownsOperation: true)
-            guard focusCurrent else { throw CocoaError(.fileReadUnknown) }
+            let fromContexts = focusSavedFilterOperation.text("view") == "contexts"
+            let controls: CoreObject
+            if fromContexts {
+                contextsReadTask?.cancel()
+                contextsGeneration += 1
+                await readContexts(ownsOperation: true)
+                guard contextsCurrent, contexts.flag("canSave") else { throw CocoaError(.fileReadUnknown) }
+                controls = contexts.object("saveControls")
+            } else {
+                focusReadTask?.cancel()
+                focusGeneration += 1
+                await readFocus(ownsOperation: true)
+                guard focusCurrent else { throw CocoaError(.fileReadUnknown) }
+                controls = focusState
+            }
             let options = try await query("focusSavedFilterOptions", [try json([
-                "controls": focusState, "operation": focusSavedFilterOperation])])
+                "controls": controls, "operation": focusSavedFilterOperation])])
             guard options.count == 3, !options.text("revision").isEmpty, !options.text("expected").isEmpty,
-                  try json(options.object("controls")).utf8.elementsEqual(json(focusState).utf8) else {
+                  try json(options.object("controls")).utf8.elementsEqual(json(controls).utf8) else {
                 throw CocoaError(.coderReadCorrupt)
             }
             focusSavedFilterOptions = options
@@ -35113,7 +35236,8 @@ final class CoreModel: ObservableObject {
                 "name": focusSavedFilterOperation.text("type") == "save" ? focusSavedFilterName as Any : NSNull(),
                 "expected": focusSavedFilterOptions.text("expected")])
             try acknowledgeFocusSavedFilter(await query("focusSavedFilterWrite", [focusSavedFilterRequest!]))
-            await readFocus(ownsOperation: true)
+            if selectedSurface == .contexts { await readContexts(ownsOperation: true) }
+            else { await readFocus(ownsOperation: true) }
         } catch { await handleFocusSavedFilterError(error) }
     }
 
@@ -35125,13 +35249,23 @@ final class CoreModel: ObservableObject {
         let expectedID = kind == "save" ? input.text("requestId")
             : kind == "delete" ? operation.text("id") : input.object("controls").text("savedFilterId")
         let controls = result.object("controls")
-        guard result.count == 2, !expectedID.isEmpty, result.text("id").utf8.elementsEqual(expectedID.utf8),
+        let fromContexts = operation.text("view") == "contexts"
+        guard result.count == (fromContexts ? 3 : 2), !fromContexts || result.text("view") == "contexts",
+              !expectedID.isEmpty, result.text("id").utf8.elementsEqual(expectedID.utf8),
               controls.count == 3, !controls.object("filters").isEmpty, !controls.text("sortBy").isEmpty,
               controls["savedFilterId"] is String || controls["savedFilterId"] is NSNull else { throw CocoaError(.coderReadCorrupt) }
-        focusState = controls
-        focusLoadedDepth = [:]
-        focusCurrent = false
-        focusNeedsRead = true
+        if operation.text("view") == "contexts" {
+            contextsSelection["savedFilterId"] = expectedID
+            contextsSelection["tokens"] = []
+            contextsLoadedDepth = pageSize
+            contextsCurrent = false
+            contextsNeedsRead = true
+        } else {
+            focusState = controls
+            focusLoadedDepth = [:]
+            focusCurrent = false
+            focusNeedsRead = true
+        }
         focusSavedFilterRequest = nil
         retryNeeded = false
         error = nil
@@ -35148,7 +35282,8 @@ final class CoreModel: ObservableObject {
             focusSavedFilterRequest = nil
             focusSavedFilterOptions = [:]
             retryNeeded = false
-            await readFocus(ownsOperation: true)
+            if selectedSurface == .contexts { await readContexts(ownsOperation: true) }
+            else { await readFocus(ownsOperation: true) }
         } else { retryNeeded = focusSavedFilterRequest != nil }
         focusSavedFilterError = label("settings.feedback.actionFailed")
     }

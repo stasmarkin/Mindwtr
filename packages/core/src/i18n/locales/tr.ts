@@ -318,6 +318,8 @@ export const trOverrides: Record<string, string> = {
         'priority.urgent': 'Acil',
         'taskEdit.editTask': 'Görevi Düzenle',
         'taskEdit.checklist': 'Kontrol listesi',
+        'savedFilters.saveTitle': "Filtreyi kaydet",
+        'savedFilters.namePlaceholder': "Filtre adı",
         'taskEdit.tab.task': 'Görev',
         'taskEdit.tab.list': 'Liste',
         'taskEdit.tab.view': 'Görüş',

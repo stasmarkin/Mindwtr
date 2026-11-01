@@ -84,11 +84,11 @@ export type PreparedFocusOrder = {
     result: { ids: string[] };
 };
 
-export type FocusSavedFilterOperation = { type: 'save' } | { type: 'delete'; id: string }
+export type FocusSavedFilterOperation = { type: 'save'; view?: 'contexts' } | { type: 'delete'; id: string }
     | { type: 'removeCriterion'; criterionId: string };
 export type FocusSavedFilterRequest = { requestId: string; controls: FocusControlState;
     operation: FocusSavedFilterOperation; name: string | null; expected: string };
-export type FocusSavedFilterResult = { controls: FocusControlState; id: string };
+export type FocusSavedFilterResult = { controls: FocusControlState; id: string; view?: 'contexts' };
 export type PreparedFocusSavedFilter = {
     version: 1;
     request: FocusSavedFilterRequest;

@@ -140,6 +140,7 @@ export function buildAdvancedChips(
     const chipOptions = {
         getAreaColor: deps.getAreaColor,
         getAreaLabel: deps.getAreaLabel,
+        getProjectLabel: (id: string) => id === SAVED_FILTER_NO_PROJECT_ID ? deps.resolveText('taskEdit.noProjectOption', 'No project') : deps.getProject(id)?.title,
         resolveText: deps.resolveText,
     };
     // Board already showed the due preset as a plain chip, so it must not come

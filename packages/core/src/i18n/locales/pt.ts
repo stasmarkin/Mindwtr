@@ -303,6 +303,8 @@ export const ptOverrides: Record<string, string> = {
         // Task Edit
         'taskEdit.editTask': 'Editar tarefa',
         'taskEdit.checklist': 'Lista de verificação',
+        'savedFilters.saveTitle': "Salvar filtro",
+        'savedFilters.namePlaceholder': "Nome do filtro",
         'taskEdit.tab.task': 'Tarefa',
         'taskEdit.tab.list': 'Lista',
         'taskEdit.tab.view': 'Visualizar',

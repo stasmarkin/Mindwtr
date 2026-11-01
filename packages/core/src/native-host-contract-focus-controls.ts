@@ -107,8 +107,8 @@ export function readNativeFocusControls(value: unknown): FocusControlState | nul
     return {
         filters,
         savedFilterId: (value.savedFilterId as string | null | undefined) ?? null,
-        ...(value.preservedCriteria ? { preservedCriteria: value.preservedCriteria as FilterCriteria } : {}),
         sortBy: (value.sortBy as SortField | undefined) ?? DEFAULT_FOCUS_SORT_BY,
+        ...(value.preservedCriteria ? { preservedCriteria: value.preservedCriteria as FilterCriteria } : {}),
     };
 }
 
@@ -134,7 +134,7 @@ const CLEAR_EDIT: FocusControlEdit = filterEdit({ type: 'clear' });
 
 export type NativeFocusChip = { id: string; label: string; excluded: boolean; edit: FocusControlEdit };
 export type NativeFocusToken = { value: string; state: 'included' | 'excluded' | 'none'; edit: FocusControlEdit };
-export type NativeFocusProjectOption = { id: string; title: string; selected: boolean; edit: FocusControlEdit };
+export type NativeFocusProjectOption = { id: string; title: string; selected: boolean; excluded: boolean; edit: FocusControlEdit };
 export type NativeFocusSavedFilterChip = { id: string; label: string; selected: boolean; edit: FocusControlEdit; deleteLabel: string };
 type Confirm = { title: string; cancelLabel: string; confirmLabel: string };
 
@@ -257,7 +257,8 @@ function focusLists(model: FocusControlsModel, t: Translate): { tokens: NativeFo
         projects: model.options.projects.map((project) => ({
             ...project,
             selected: filters.projects.includes(project.id),
-            edit: filterEdit({ type: 'toggleProject', value: project.id }),
+            excluded: filters.excludedProjects?.includes(project.id) ?? false,
+            edit: filterEdit({ type: 'cycleProject', value: project.id }),
         })),
         savedFilters: model.savedFilters.map((filter) => {
             const selected = state.savedFilterId === filter.id;
@@ -385,7 +386,8 @@ export function buildNativeFocusControls(model: FocusControlsModel, ctx: { t: Tr
             },
             summaries: {
                 tokens: joinSummary([...filters.tokens, ...filters.excludedTokens.map((token) => `${excluded}: ${token}`)], all),
-                projects: joinSummary(model.options.projects.filter((project) => filters.projects.includes(project.id)).map((project) => project.title), all),
+                projects: joinSummary(model.options.projects.filter((project) => filters.projects.includes(project.id) || filters.excludedProjects?.includes(project.id))
+                    .map((project) => filters.excludedProjects?.includes(project.id) ? `${tf('filters.excluded', 'Excluded')}: ${project.title}` : project.title), all),
                 timeEstimates: joinSummary(filters.timeEstimates.map((estimate) => formatTimeEstimateLabel(estimate)), all),
                 energyLevels: joinSummary(filters.energyLevels.map((level) => t(`energyLevel.${level}`)), all),
                 more: joinSummary([
@@ -655,17 +657,23 @@ export function createFocusControlMethods(deps: FocusControlDeps) {
          * Save the current filter, sort and grouping as a saved Focus filter named `name`
          * (trimmed), then apply it. The request UUID becomes the saved filter's ID.
          */
-        saveFocusFilter(input: { requestId: string; controls?: NativeFocusControlsInput; name: string }) {
+        saveFocusFilter(input: { requestId: string; controls?: NativeFocusControlsInput; name: string; view?: 'contexts' }) {
             return command(
                 input,
-                (value) => (typeof value.name === 'string' && value.name.length <= 500 && value.name.trim() ? ['save', value.name] : null),
+                (value) => (typeof value.name === 'string' && value.name.length <= 500 && value.name.trim()
+                    && (value.view === undefined || value.view === 'contexts')
+                    ? ['save', value.name, ...(value.view ? [value.view] : [])] : null),
                 async (value, state, model) => {
                     const id = (value.requestId as string).toLowerCase();
+                    const view: 'contexts' | 'focus' = value.view === 'contexts' ? 'contexts' : 'focus';
                     const settings = useTaskStore.getState().settings;
                     const existing = settings.savedFilters?.find((filter) => filter.id === id);
                     if (existing) {
                         // A replay after a restart: the filter it created answers it.
                         if (existing.name !== (value.name as string).trim() || existing.deletedAt) return fail('INVALID_INPUT', 'Request ID already belongs to another saved filter');
+                        if (value.view === 'contexts' && (existing.view !== view
+                            || JSON.stringify(existing.criteria) !== JSON.stringify(model.filter.currentCriteria)))
+                            return fail('INVALID_INPUT', 'Request ID already belongs to another saved filter');
                         return unchanged(applyFocusSavedFilter(state, existing));
                     }
                     const plan = planFocusFilterSave({
@@ -679,8 +687,11 @@ export function createFocusControlMethods(deps: FocusControlDeps) {
                         nowIso: new Date().toISOString(),
                     });
                     if (!plan) return fail('INVALID_INPUT', 'There is nothing to save');
-                    const written = await runStoreWrite(() => useTaskStore.getState().updateSettings({ savedFilters: plan.savedFilters }));
-                    return settleWrite(written, { controls: applyFocusSavedFilter(state, plan.filter), changed: true });
+                    const filter = { ...plan.filter, view };
+                    const written = await runStoreWrite(() => useTaskStore.getState().updateSettings({
+                        savedFilters: [...(settings.savedFilters ?? []), filter],
+                    }));
+                    return settleWrite(written, { controls: applyFocusSavedFilter(state, filter), changed: true });
                 },
             );
         },

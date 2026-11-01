@@ -85,6 +85,7 @@ const legacySavedFilterProjection = (filter: SavedFilter, inventedAt: string | u
     const criteria = isObjectRecord(value.criteria) ? { ...value.criteria } : {};
     // v1.3.2 knew neither task-date criteria nor the rolling date presets.
     delete criteria.anyDateRange;
+    delete criteria.excludedProjects;
     for (const field of ['dueDateRange', 'startDateRange']) {
         const range = criteria[field];
         if (isObjectRecord(range) && typeof range.preset === 'string'

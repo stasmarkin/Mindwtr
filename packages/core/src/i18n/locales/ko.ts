@@ -2590,6 +2590,8 @@ export const koOverrides: Record<string, string> = {
         'settings.networkProxyInvalid': '유효한 http(s) 프록시 URL을 입력하세요.',
         'settings.networkProxySave': '프록시 저장',
         'settings.syncPreferenceSavedFilters': '저장된 필터',
+        'savedFilters.saveTitle': "필터 저장",
+        'savedFilters.namePlaceholder': "필터 이름",
         'settings.backgroundSync': '백그라운드 동기화',
         'settings.backgroundSyncDesc': '데스크톱 동기화는 시작 시, 앱이 다시 포커스를 받을 때, Mindwtr가 실행되는 동안 매 15분마다, 할 일/프로젝트 변경 후 곧바로 실행됩니다. 트레이로 닫아도 동기화가 유지되며, \'시작 시 실행\'을 켜면 로그인 후 동기화가 시작됩니다. 앱을 종료하면 데스크톱 백그라운드 동기화가 중지됩니다.',
         'settings.attachmentsCleanupPendingDeletes': '대기 중인 원격 삭제',

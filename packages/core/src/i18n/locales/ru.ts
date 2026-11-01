@@ -310,6 +310,8 @@ export const ruOverrides: Record<string, string> = {
         'priority.urgent': 'Срочный',
         'taskEdit.editTask': 'Редактировать задачу',
         'taskEdit.checklist': 'Контрольный список',
+        'savedFilters.saveTitle': "Сохранить фильтр",
+        'savedFilters.namePlaceholder': "Название фильтра",
         'taskEdit.tab.task': 'Задача',
         'taskEdit.tab.list': 'Список',
         'taskEdit.tab.view': 'Вид',

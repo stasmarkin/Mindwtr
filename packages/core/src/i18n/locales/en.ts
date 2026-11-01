@@ -2908,6 +2908,8 @@ export const en: Record<string, string> = {
         'settings.networkProxyInvalid': 'Enter a valid http(s) proxy URL.',
         'settings.networkProxySave': 'Save proxy',
         'settings.syncPreferenceSavedFilters': 'Saved filters',
+        'savedFilters.saveTitle': "Save filter",
+        'savedFilters.namePlaceholder': "Filter name",
         'settings.backgroundSync': 'Background sync',
         'settings.backgroundSyncDesc': 'Desktop sync runs on startup, when the app regains focus, every 15 minutes while Mindwtr is running, and shortly after task/project changes. Close-to-tray keeps it active; launch-at-startup can start it after sign-in. Quitting the app stops desktop background sync.',
         'settings.attachmentsCleanupPendingDeletes': 'Pending remote deletes',

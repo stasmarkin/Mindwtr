@@ -2735,6 +2735,8 @@ export const deOverrides: Record<string, string> = {
         'settings.syncOff': 'Synchronisierung ist aus',
         'settings.syncOffDesc': 'Du kannst die Synchronisierung jederzeit über diesen Bildschirm wieder einschalten.',
         'settings.syncPreferenceSavedFilters': 'Gespeicherte Filter',
+        'savedFilters.saveTitle': "Filter speichern",
+        'savedFilters.namePlaceholder': "Filtername",
         'settings.syncQueuedBody': 'Während der Synchronisierung kamen lokale Änderungen an. Ein erneuter Versuch wurde automatisch eingereiht.',
         'settings.syncReadMergeFolder': 'Sync-Ordner lesen und zusammenführen',
         'settings.syncReadMergeSelfHosted': 'Selbst gehostete Daten lesen und zusammenführen',

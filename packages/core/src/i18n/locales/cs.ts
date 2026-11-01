@@ -338,6 +338,8 @@ export const csOverrides: Record<string, string> = {
         'list.density': 'Hustota',
         'common.offline': 'Bez připojení',
         'taskEdit.checklist': 'Kontrolní seznam',
+        'savedFilters.saveTitle': "Uložit filtr",
+        'savedFilters.namePlaceholder': "Název filtru",
         'taskEdit.repeatReminderLabel': 'Opakovat připomenutí',
         'taskEdit.repeatReminderOff': 'Vypnuto',
         'taskEdit.repeatReminderEveryMinutes': 'Každých {count} min',

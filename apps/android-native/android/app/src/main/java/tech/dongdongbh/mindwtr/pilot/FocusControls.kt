@@ -458,7 +458,7 @@ private fun FocusFilterSheet(model: InboxViewModel, controls: JSONObject, open: 
                     modifier = Modifier.fillMaxWidth().padding(vertical = 28.dp))
                 for (option in options) {
                     val label = option.optString("title").ifEmpty { option.getString("value") }
-                    val out = option.optString("state") == "excluded"
+                    val out = option.optString("state") == "excluded" || option.optBoolean("excluded")
                     val on = option.optString("state") == "included" || option.optBoolean("selected")
                     val spoken = if (out) "$label ($excluded)" else label
                     val optionEdit = option.getJSONObject("edit")

@@ -3344,6 +3344,22 @@ describeSqlite('SqliteAdapter keeps saved filters as stored', () => {
         db.close();
     });
 
+    it('round-trips Context project exclusions and multiple statuses through JSON and table recovery', async () => {
+        const filters: NonNullable<AppData['settings']['savedFilters']> = [{ ...older, view: 'contexts',
+            criteria: { contexts: ['@person/emma'], excludedProjects: ['project-excluded'], statuses: ['next', 'someday'] } }];
+        const adapter = new SqliteAdapter(createClient(db));
+        await adapter.saveData(JSON.parse(JSON.stringify(doc(filters))));
+        const first = await new SqliteAdapter(createClient(db)).getData();
+        expect(first.settings.savedFilters).toEqual(filters);
+        const row = JSON.parse(getSql<{ data: string }>(db, 'SELECT data FROM settings WHERE id = 1')!.data);
+        delete row.savedFilters;
+        runSql(db, 'UPDATE settings SET data = ? WHERE id = 1', [JSON.stringify(row)]);
+        const recovered = await new SqliteAdapter(createClient(db)).getData();
+        expect(recovered.settings.savedFilters).toEqual(filters);
+        await adapter.saveData(recovered);
+        expect((await adapter.getData()).settings.savedFilters).toEqual(filters);
+    });
+
     it('retains rolling task date criteria through settings JSON, table recovery, and a second save', async () => {
         const filters = ['today', 'next_7_days', 'overdue_next_7_days', 'next_14_days', 'next_30_days', 'upcoming'].map((preset) => ({
             ...older, id: `date-${preset}`, criteria: { anyDateRange: { preset } },

@@ -490,7 +490,11 @@ class MenuModel(internal val shell: InboxViewModel, private val saved: SavedStat
                     if (dialog?.optString("kind") == "filters") put("filterSheetOpen", true)
                     own.optJSONArray("except")?.let { put("selectAll", JSONObject().put("except", it)) } ?: put("selectedIds", own.optJSONArray("selected") ?: JSONArray())
                 }
-            "contexts" -> kept(listOf("tokens", "matchMode", "searchQuery")).put("selectedIds", own.optJSONArray("selected") ?: JSONArray()).also { dialogInputs(list, it) }
+            "contexts" -> kept(listOf("tokens", "matchMode", "searchQuery", "filters", "preservedCriteria", "savedFilterId"))
+                .put("selectedIds", own.optJSONArray("selected") ?: JSONArray()).also {
+                    if (dialog?.optString("kind") == "filters") it.put("filterSheetOpen", true)
+                    dialogInputs(list, it)
+                }
             "trash" -> JSONObject().put("selected", JSONObject().put("taskIds", own.optJSONArray("selectedTasks") ?: JSONArray())
                 .put("projectIds", own.optJSONArray("selectedProjects") ?: JSONArray()))
             // RN's Review opens on its Due scope.
@@ -508,8 +512,12 @@ class MenuModel(internal val shell: InboxViewModel, private val saved: SavedStat
 
     /** What core accepted: the same inputs with core's returned filters and none of a one-time edit or dialog input, for every later window. */
     private fun accepted(list: String, params: JSONObject, view: JSONObject): JSONObject = JSONObject(params.toString()).apply {
-        remove("organize"); remove("picker")
+        remove("organize"); remove("picker"); remove("filterPicker"); remove("filterEdit")
         view.optJSONObject("filters")?.optJSONObject("state")?.let { put("filters", it) }
+        if (list == "contexts") {
+            put("savedFilterId", view.opt("savedFilterId") ?: JSONObject.NULL)
+            if (view.has("preservedCriteria")) put("preservedCriteria", view.getJSONObject("preservedCriteria")) else remove("preservedCriteria")
+        }
         if (list == "waiting") put("person", view.getString("person"))
         if (list == "reference") put("includeArchivedProjects", view.getBoolean("includeArchivedProjects"))
         view.optJSONObject("selection")?.let { put("tokens", it.getJSONArray("tokens")).put("matchMode", it.getString("matchMode")) }
@@ -562,6 +570,9 @@ class MenuModel(internal val shell: InboxViewModel, private val saved: SavedStat
     private fun collectionWindow(runtime: CoreHost, list: String, page: MenuPage, name: String, offset: Int, query: String? = null): JSONObject = when (list) {
         "weekly" -> runtime.menuRead("weeklyList", JSONObject(page.params.toString()).put("list", name.substringBefore(':'))
             .apply { if (':' in name) put("key", name.substringAfter(':')) }.put("offset", offset).put("limit", WINDOW).put("revision", page.revision).toString())
+        "contexts" -> runtime.menuRead("contexts", JSONObject(page.params.toString()).put("offset", 0).put("limit", 1)
+            .put("revision", page.revision).put("filterPicker", JSONObject().put("name", name).put("query", query ?: "")
+                .put("offset", offset).put("limit", WINDOW).put("revision", page.revision)).toString()).getJSONObject("filterPicker")
         "inbox", "archive" -> runtime.menuRead(if (list == "inbox") "inboxTokens" else "archiveTokens", JSONObject().put("params", page.params)
             .put("offset", offset).put("limit", WINDOW).put("revision", page.revision).apply { query?.let { put("query", it) } }.toString())
         else -> runtime.menuRead("collection", JSONObject().put("view", list).put("collection", name).put("params", page.params)
@@ -586,7 +597,11 @@ class MenuModel(internal val shell: InboxViewModel, private val saved: SavedStat
                     put("filters", next.params.getJSONObject("filters")).put("selected", next.view.getJSONArray("selectedIds"))
                     next.view.optJSONObject("selectAll")?.let { put("except", it.getJSONArray("except")) }
                 }
-                "contexts" -> put("selected", next.view.getJSONArray("selectedIds"))
+                "contexts" -> {
+                    put("selected", next.view.getJSONArray("selectedIds")).put("filters", next.params.getJSONObject("filters"))
+                        .put("savedFilterId", next.params.opt("savedFilterId") ?: JSONObject.NULL)
+                    if (next.params.has("preservedCriteria")) put("preservedCriteria", next.params.getJSONObject("preservedCriteria")) else remove("preservedCriteria")
+                }
                 "trash" -> next.view.getJSONObject("selected").let { put("selectedTasks", it.getJSONArray("taskIds")).put("selectedProjects", it.getJSONArray("projectIds")) }
                 "review" -> put("expandedAreaIds", next.params.getJSONArray("expandedAreaIds")).put("expandedProjectIds", next.params.getJSONArray("expandedProjectIds"))
                     .put("selected", next.view.optJSONObject("bulk")?.getJSONArray("selectedIds") ?: JSONArray())
@@ -734,6 +749,14 @@ class MenuModel(internal val shell: InboxViewModel, private val saved: SavedStat
     }
 
     // ---- Screen choices ----
+
+    fun selectContextsSavedFilter(id: String?) {
+        editOwn("contexts") {
+            put("savedFilterId", id ?: JSONObject.NULL).put("tokens", JSONArray()).put("matchMode", "all")
+            put("filters", JSONObject()).remove("preservedCriteria")
+        }
+        reload()
+    }
 
     /** Waiting's person chip ('' is All). */
     fun person(person: String) { editOwn("waiting") { put("person", person) }; reload() }
@@ -1051,11 +1074,21 @@ class MenuModel(internal val shell: InboxViewModel, private val saved: SavedStat
      * The open create dialog's exact request: a section's name, a task's title with its capture UUID and section, or the Weekly
      * Review's project Add task (core's addProjectTask, its request UUID the new task's id).
      */
+    fun openContextsSave() {
+        val view = page?.takeIf { it.list == "contexts" }?.view ?: return
+        val controls = view.optJSONObject("saveControls") ?: return
+        if (!idle || !view.optBoolean("canSave")) return
+        keepDialog(JSONObject().put("kind", "contextsSave").put("text", "")
+            .put("requestId", UUID.randomUUID().toString()).put("controls", controls))
+    }
+
     fun createAction(): FailedAction? {
         val open = dialog ?: return null
         val text = open.optString("text").trim()
         if (text.isEmpty()) return null
         return when (open.optString("kind")) {
+            "contextsSave" -> FailedAction("focusSave", open.getString("requestId"),
+                JSONObject().put("controls", open.getJSONObject("controls")).put("name", text).put("view", "contexts").toString())
             "newSection" -> FailedAction("somedaySection", open.getString("requestId"), text)
             "addTask" -> FailedAction("somedayTask", open.getString("captureId"), text,
                 patch = mapOf("sectionId" to if (open.isNull("sectionId")) null else open.getString("sectionId")))
@@ -1379,7 +1412,12 @@ class MenuModel(internal val shell: InboxViewModel, private val saved: SavedStat
             // A refused composer Save wrote nothing: the composer's next Save gets a fresh request UUID.
             if (refused && action.kind == "calendarCreate") shell.ui { calendar.refused(action) }
             // A refused saved filter wrote nothing either: the next Save gets a fresh one.
-            if (refused && action.kind == "focusSave") shell.ui { focusControls.refused(action) }
+            if (refused && action.kind == "focusSave") shell.ui {
+                if (JSONObject(action.title).optString("view") == "contexts") {
+                    dialog?.takeIf { it.optString("kind") == "contextsSave" && it.optString("requestId") == action.id }
+                        ?.let { keepDialog(JSONObject(it.toString()).put("requestId", UUID.randomUUID().toString())) }
+                } else focusControls.refused(action)
+            }
             // A refused Settings write wrote nothing: a GTD time core cannot read is RN's warning toast, not an error.
             // Settings › Calendar's: a stale view reads again, and ACTION_FAILED (the device refused, or no calendar push yet) wrote nothing.
             if (refused && action.kind in SETTINGS_KINDS) { shell.ui { settings.refused(action, failure) }; if (action.kind == "gtdSetting") return@perform
@@ -1461,7 +1499,17 @@ class MenuModel(internal val shell: InboxViewModel, private val saved: SavedStat
             "calendarAction", "calendarCreate" -> calendar.done(action, reply)
             "boardAction", "boardCreate" -> board.done(action, reply)
             "bulkAction" -> bulkDone(action, reply)
-            "focusGroup", "focusSave", "focusCriterion", "focusDelete", "focusReorder" -> focusControls.done(action, reply)
+            "focusGroup", "focusSave", "focusCriterion", "focusDelete", "focusReorder" -> {
+                if (action.kind == "focusSave" && JSONObject(action.title).optString("view") == "contexts") {
+                    editOwn("contexts") {
+                        put("savedFilterId", reply.getJSONObject("controls").getString("savedFilterId"))
+                        put("tokens", JSONArray())
+                        remove("preservedCriteria")
+                    }
+                    closeDialog("contextsSave")
+                    Log.i(CoreHost.TAG, "Native Context filter saved releaseCheck=v1.3.8/context-filter-save outcome=confirmed")
+                } else focusControls.done(action, reply)
+            }
             in SETTINGS_KINDS -> settings.done(action, reply)
             // Bulk organize's new project or area: the draft core answered (it chosen), and the dialog again.
             "bulkCreate" -> dialog?.takeIf { it.optString("kind") == "organize" }?.let { open ->

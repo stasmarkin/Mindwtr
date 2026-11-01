@@ -71,6 +71,32 @@ describe('ContextsView', () => {
         });
     });
 
+    it('removes a saved status chip without dropping raw date/area criteria and resets statuses on deselect', () => {
+        const tasks = [
+            makeTask('next', { title: 'Next meeting', contexts: ['@Office'], areaId: 'a', dueDate: '2026-11-01' }),
+            makeTask('someday', { title: 'Someday meeting', status: 'someday', contexts: ['@Office'], areaId: 'a', dueDate: '2026-11-01' }),
+            makeTask('far', { title: 'Far future meeting', contexts: ['@Office'], areaId: 'a', dueDate: '2030-01-01' }),
+        ];
+        useTaskStore.setState({ tasks, _allTasks: tasks, settings: { savedFilters: [{ id: 'emma', name: 'Emma saved', view: 'contexts',
+            criteria: { contexts: ['@Office'], statuses: ['next', 'someday'], areas: ['a'], dueDateRange: { from: '2026-10-31', to: '2026-11-05' } },
+            createdAt: now, updatedAt: now }] } });
+        renderContextsView();
+        fireEvent.click(screen.getByRole('button', { name: 'Emma saved' }));
+        expect(screen.getByText('Next meeting')).toBeInTheDocument();
+        expect(screen.getByText('Someday meeting')).toBeInTheDocument();
+        expect(screen.queryByText('Far future meeting')).not.toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Remove filter: Someday' }));
+        expect(screen.queryByText('Someday meeting')).not.toBeInTheDocument();
+        expect(screen.getByText('Next meeting')).toBeInTheDocument();
+        expect(screen.queryByText('Far future meeting')).not.toBeInTheDocument();
+        // Reapply, then deselect the saved chip: its status subset must leave with it.
+        fireEvent.click(screen.getByRole('button', { name: 'Emma saved' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Emma saved' }));
+        expect(screen.getByText('Far future meeting')).toBeInTheDocument();
+        expect(screen.getByText('Someday meeting')).toBeInTheDocument();
+    });
+
     const taskDrag = (id: string) => {
         const values: Record<string, string> = {};
         const transfer = {

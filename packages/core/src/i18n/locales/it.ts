@@ -1698,6 +1698,8 @@ export const itOverrides: Record<string, string> = {
         'tab.menu': 'Menù',
         'tab.agenda': 'Agenda del giorno',
         'taskEdit.checklist': 'Lista di controllo',
+        'savedFilters.saveTitle': "Salva filtro",
+        'savedFilters.namePlaceholder': "Nome del filtro",
         'taskEdit.areaLabel': 'Area attività',
         'task.aria.area': 'Area attività',
         'recurrence.showFutureInCalendar': 'Mostra occorrenze future nel calendario',

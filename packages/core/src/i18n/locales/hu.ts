@@ -425,6 +425,8 @@ export const huOverrides: Record<string, string> = {
     'taskEdit.aiAssistant': 'AI asszisztens',
     'task.dateIssue.startAfterDue': 'A kezdés a határidő után van',
     'taskEdit.checklist': 'Ellenőrzőlista',
+    'savedFilters.saveTitle': "Szűrő mentése",
+    'savedFilters.namePlaceholder': "Szűrő neve",
     'taskEdit.tab.task': 'Feladat',
     'taskEdit.tab.list': 'Lista',
     'taskEdit.tab.view': 'Nézet',

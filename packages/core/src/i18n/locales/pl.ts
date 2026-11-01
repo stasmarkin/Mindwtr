@@ -312,6 +312,8 @@ export const plOverrides: Record<string, string> = {
         'priority.urgent': 'Pilne',
         'taskEdit.editTask': 'Edytuj zadanie',
         'taskEdit.checklist': 'Lista kontrolna',
+        'savedFilters.saveTitle': "Zapisz filtr",
+        'savedFilters.namePlaceholder': "Nazwa filtra",
         'taskEdit.tab.task': 'Zadanie',
         'taskEdit.tab.list': 'Lista',
         'taskEdit.tab.view': 'Widok',

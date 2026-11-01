@@ -427,6 +427,8 @@ export const daOverrides: Record<string, string> = {
     'taskEdit.aiAssistant': 'AI assistent',
     'task.dateIssue.startAfterDue': 'Starter efter forfaldsdato',
     'taskEdit.checklist': 'Tjekliste',
+    'savedFilters.saveTitle': "Gem filter",
+    'savedFilters.namePlaceholder': "Filternavn",
     'taskEdit.tab.task': 'Opgave',
     'taskEdit.tab.list': 'Liste',
     'taskEdit.tab.view': 'Visning',

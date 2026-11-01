@@ -392,6 +392,8 @@ export const viOverrides: Record<string, string> = {
         // Task Edit
         'taskEdit.editTask': 'Chỉnh sửa nhiệm vụ',
         'taskEdit.checklist': 'Danh sách kiểm tra',
+        'savedFilters.saveTitle': "Lưu bộ lọc",
+        'savedFilters.namePlaceholder': "Tên bộ lọc",
         'taskEdit.tab.task': 'Nhiệm vụ',
         'taskEdit.tab.list': 'Danh sách',
         'taskEdit.tab.view': 'Xem',

@@ -19,6 +19,7 @@ import type {
   Task,
   TaskEnergyLevel,
   TaskPriority,
+  TaskStatus,
   TimeEstimate,
 } from './types';
 
@@ -131,7 +132,9 @@ export function useTaskFilterSelections({
   // Both sides of the token cycle in one value: the transition reads them
   // together, so splitting them would make a toggle depend on a stale render.
   const [tokenSelection, setTokenSelection] = useState<TokenSelection>(NO_TOKENS);
-  const [projects, setProjects] = useState<string[]>([]);
+  const [projectSelection, setProjectSelection] = useState<TokenSelection>(NO_TOKENS);
+  const { included: projects, excluded: excludedProjects } = projectSelection;
+  const [statuses, setStatuses] = useState<TaskStatus[]>([]);
   const [priorities, setPriorities] = useState<TaskPriority[]>([]);
   const [energyLevels, setEnergyLevels] = useState<TaskEnergyLevel[]>([]);
   const [timeEstimates, setTimeEstimates] = useState<TimeEstimate[]>([]);
@@ -169,16 +172,21 @@ export function useTaskFilterSelections({
   }, [locationQuery, visibility.location]);
   useEffect(() => {
     if (!retainProjects) return;
-    setProjects((current) => stableFilter(current, (projectId) => retainProjects.includes(projectId)));
+    setProjectSelection((current) => {
+      const included = stableFilter(current.included, (projectId) => retainProjects.includes(projectId));
+      return included === current.included ? current : { ...current, included };
+    });
   }, [projects, retainProjects]);
 
   const forgetPreservedFields = useCallback((...fields: (keyof FilterCriteria)[]) => {
     setPreservedCriteria((current) => {
-      const next = { ...current };
+      const next = { ...(activeSavedFilter
+        ? rawSavedFilters?.find((filter) => filter.id === activeSavedFilter.id)?.criteria ?? activeSavedFilter.criteria
+        : current) };
       fields.forEach((field) => { delete next[field]; });
       return next;
     });
-  }, []);
+  }, [activeSavedFilter, rawSavedFilters]);
 
   const toggleToken = useCallback((token: string) => {
     forgetPreservedFields('contexts', 'tags', 'excludedContexts', 'excludedTags');
@@ -209,9 +217,37 @@ export function useTaskFilterSelections({
   }, [forgetPreservedFields]);
 
   const toggleProject = useCallback((projectId: string) => {
-    forgetPreservedFields('projects');
+    forgetPreservedFields('projects', 'excludedProjects');
     setActiveSavedFilterId(null);
-    setProjects((current) => toggleValue(current, projectId));
+    setProjectSelection((current) => ({ ...current, included: toggleValue(current.included, projectId) }));
+  }, [forgetPreservedFields]);
+  const cycleProject = useCallback((projectId: string) => {
+    forgetPreservedFields('projects', 'excludedProjects');
+    setActiveSavedFilterId(null);
+    setProjectSelection((current) => {
+      if (current.included.includes(projectId)) return {
+        included: current.included.filter((id) => id !== projectId),
+        excluded: current.excluded.includes(projectId) ? current.excluded : [...current.excluded, projectId],
+      };
+      if (current.excluded.includes(projectId)) return { ...current, excluded: current.excluded.filter((id) => id !== projectId) };
+      return { ...current, included: [...current.included, projectId] };
+    });
+  }, [forgetPreservedFields]);
+  const removeProject = useCallback((projectId: string) => {
+    forgetPreservedFields('projects', 'excludedProjects');
+    setActiveSavedFilterId(null);
+    setProjectSelection((current) => ({ included: current.included.filter((id) => id !== projectId),
+      excluded: current.excluded.filter((id) => id !== projectId) }));
+  }, [forgetPreservedFields]);
+  const toggleStatus = useCallback((status: TaskStatus) => {
+    forgetPreservedFields('statuses');
+    setActiveSavedFilterId(null);
+    setStatuses((current) => toggleValue(current, status));
+  }, [forgetPreservedFields]);
+  const setStatusSelection = useCallback((next: TaskStatus[]) => {
+    forgetPreservedFields('statuses');
+    setActiveSavedFilterId(null);
+    setStatuses(next);
   }, [forgetPreservedFields]);
   const togglePriority = useCallback((priority: TaskPriority) => {
     forgetPreservedFields('priority');
@@ -257,7 +293,8 @@ export function useTaskFilterSelections({
     updateAnyDateRange(undefined);
     setPreservedCriteria({});
     setTokenSelection(NO_TOKENS);
-    setProjects([]);
+    setProjectSelection(NO_TOKENS);
+    setStatuses([]);
     setPriorities([]);
     setEnergyLevels([]);
     setTimeEstimates([]);
@@ -279,7 +316,8 @@ export function useTaskFilterSelections({
     updateAnyDateRange(selections.anyDateRange);
     setPreservedCriteria({});
     setTokenSelection({ included: selections.tokens, excluded: selections.excludedTokens });
-    setProjects(selections.projects);
+    setProjectSelection({ included: selections.projects, excluded: selections.excludedProjects ?? [] });
+    setStatuses(selections.statuses ?? []);
     setPriorities(selections.priorities);
     setEnergyLevels(selections.energyLevels);
     setTimeEstimates(selections.timeEstimates);
@@ -296,6 +334,8 @@ export function useTaskFilterSelections({
       tokens,
       excludedTokens,
       projects,
+      excludedProjects,
+      statuses,
       locations: visibility.location && locationQuery.trim() ? [locationQuery.trim()] : [],
       priorities: visibility.priority ? priorities : [],
       energyLevels: visibility.energyLevel ? energyLevels : [],
@@ -313,6 +353,8 @@ export function useTaskFilterSelections({
     locationQuery,
     priorities,
     projects,
+    excludedProjects,
+    statuses,
     tagMatchMode,
     timeEstimates,
     tokens,
@@ -380,8 +422,11 @@ export function useTaskFilterSelections({
     projects.forEach((projectId) => {
       const label = getProjectLabel?.(projectId);
       if (!label) return;
-      result.push({ id: `project:${projectId}`, label, onPress: () => toggleProject(projectId) });
+      result.push({ id: `project:${projectId}`, label, onPress: () => removeProject(projectId) });
     });
+    excludedProjects.forEach((projectId) => result.push({ id: `excluded-project:${projectId}`,
+      label: getProjectLabel?.(projectId) ?? projectId, excluded: true, onPress: () => removeProject(projectId) }));
+    if (view === 'list') statuses.forEach((status) => result.push({ id: `status:${status}`, label: t(`status.${status}`), onPress: () => toggleStatus(status) }));
     if (visibility.priority && !hasPreservedPriority) {
       priorities.forEach((priority) => {
         result.push({
@@ -433,9 +478,11 @@ export function useTaskFilterSelections({
         onPress: () => setLocation(''),
       });
     }
-    const chipOptions = { resolveText: (key: string, fallback: string) => tFallback(t, key, fallback) };
+    const chipOptions = { resolveText: (key: string, fallback: string) => tFallback(t, key, fallback), getProjectLabel };
     const visiblePreservedCriteria = normalizeFilterCriteria({
       ...preservedCriteria,
+      excludedProjects: undefined,
+      statuses: undefined,
       ...(visibility.location ? {} : { locations: undefined }),
       ...(visibility.timeEstimate ? {} : { timeEstimateRange: undefined }),
     });
@@ -464,6 +511,11 @@ export function useTaskFilterSelections({
     activeSavedFilter,
     energyLevels,
     excludedTokens,
+    excludedProjects,
+    statuses,
+    removeProject,
+    toggleStatus,
+    setStatusSelection,
     getProjectLabel,
     locationQuery,
     removeToken,
@@ -482,6 +534,7 @@ export function useTaskFilterSelections({
     visibility.location,
     visibility.priority,
     visibility.timeEstimate,
+    view,
   ]);
 
   return {
@@ -492,6 +545,8 @@ export function useTaskFilterSelections({
     tokens,
     excludedTokens,
     projects,
+    excludedProjects,
+    statuses,
     priorities,
     energyLevels,
     timeEstimates,
@@ -519,6 +574,10 @@ export function useTaskFilterSelections({
     toggleToken,
     removeToken,
     toggleProject,
+    cycleProject,
+    removeProject,
+    toggleStatus,
+    setStatusSelection,
     togglePriority,
     toggleEnergyLevel,
     toggleTimeEstimate,

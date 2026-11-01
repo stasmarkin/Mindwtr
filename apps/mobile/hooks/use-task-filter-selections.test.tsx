@@ -254,8 +254,25 @@ describe('useTaskFilterSelections', () => {
 
     act(() => handle.current.togglePriority('urgent'));
     expect(handle.current.activeSavedFilterId).toBeNull();
-    expect(handle.current.criteria.areas).toBeUndefined();
+    expect(handle.current.criteria.areas).toEqual(['area-1']);
     expect(handle.current.canSave).toBe(true);
+  });
+
+  it('preserves raw saved criteria when statuses change and cycles project exclusions independently', () => {
+    const criteria = { contexts: ['@person/emma'], statuses: ['next', 'someday'] as Task['status'][], excludedProjects: ['p1'],
+      areas: ['area-1'], dueDateRange: { preset: 'next_7_days' as const }, futureCriterion: { enabled: true } };
+    const saved: SavedFilter = { id: 'emma', name: 'Emma', view: 'contexts', criteria,
+      createdAt: '2026-10-31T12:00:00.000Z', updatedAt: '2026-10-31T12:00:00.000Z' };
+    const { handle } = renderSelections({ savedFilters: [saved], rawSavedFilters: [saved], getProjectLabel: (id) => id });
+    act(() => handle.current.applySaved(saved));
+    act(() => handle.current.setStatusSelection(['next']));
+    expect(handle.current.criteria).toMatchObject({ ...criteria, statuses: ['next'] });
+    act(() => handle.current.cycleProject('p2'));
+    act(() => handle.current.cycleProject('p2'));
+    expect(handle.current.criteria).toMatchObject({ excludedProjects: ['p1', 'p2'], statuses: ['next'], areas: ['area-1'], futureCriterion: { enabled: true } });
+    act(() => handle.current.chips.find((chip) => chip.id === 'excluded-project:p2')!.onPress());
+    expect(handle.current.criteria.excludedProjects).toEqual(['p1']);
+    expect(handle.current.statuses).toEqual(['next']);
   });
 
   it('drops the binding when the saved filter disappears, keeping the selections', () => {

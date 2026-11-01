@@ -313,6 +313,8 @@ export const hiOverrides: Record<string, string> = {
         'priority.urgent': 'अति आवश्यक',
         'taskEdit.editTask': 'कार्य संपादित करें',
         'taskEdit.checklist': 'जांच सूची',
+        'savedFilters.saveTitle': "फ़िल्टर सहेजें",
+        'savedFilters.namePlaceholder': "फ़िल्टर का नाम",
         'taskEdit.tab.task': 'काम',
         'taskEdit.tab.list': 'सूची',
         'taskEdit.tab.view': 'देखना',

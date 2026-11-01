@@ -1,4 +1,5 @@
 import { getDocsGuideUrl } from './docs-guidance';
+import { buildContextsFilterModel, CONTEXTS_FILTER_STATUSES, getContextsSaveCriteria } from './contexts-filter';
 import { isGettingStartedProject } from './getting-started-seed';
 import { getFocusHiddenByAreaLabel } from './focus-controls';
 import { getPomodoroTaskChoices } from './pomodoro';
@@ -29,7 +30,7 @@ import { createTaskDraft, isTaskDraftDateInputBaseline, resolveTaskDraftTitle, s
 import { getTaskReminderPolicy } from './task-reminder-policy';
 import { getRetainedTaskContexts, getUsedTaskTokens } from './task-token-usage';
 import { getSavedTaxonomyTokens } from './taxonomy-catalog';
-import type { AppSettings } from './types';
+import type { AppSettings, FilterCriteria } from './types';
 import {
     applyTaskDraftPatch,
     buildTaskDraftDestinationPicker,
@@ -263,6 +264,8 @@ import {
     createMenuViewMethods,
     isFoldIdList,
     isFilterEdit,
+    isPreservedFilterCriteria,
+    firstWindow,
     matchesPickerQuery,
     nativeFilterView,
     paramsKey,
@@ -4454,6 +4457,15 @@ export type NativeContextsView = {
     revision: string;
     /** The selection as the screen applies it: an empty selection matches with All. */
     selection: { tokens: string[]; matchMode: ContextOrTagMatchMode };
+    filters: NativeListFilterView;
+    filterChips: NativeListChip[];
+    criteria: FilterCriteria;
+    preservedCriteria?: FilterCriteria;
+    savedFilterId: string | null;
+    savedFilters: NativeWindow<{ id: string; name: string; selected: boolean }>;
+    canSave: boolean;
+    saveControls: FocusControlState | null;
+    filterPicker: { name: 'projects' | 'tokens'; query: string; total: number; items: unknown[] } | null;
     searchPlaceholder: string;
     chips: NativeContextsChip[];
     matchMode: { label: string; options: { mode: ContextOrTagMatchMode; label: string; selected: boolean }[] } | null;
@@ -4873,6 +4885,9 @@ function createListViewMethods(deps: ListViewDeps) {
     return {
         getContextsView(input: {
             tokens?: string[]; matchMode?: ContextOrTagMatchMode; searchQuery?: string; selectedIds?: string[];
+            filters?: Partial<ListFilterState>; filterEdit?: ListFilterEdit; savedFilterId?: string | null;
+            preservedCriteria?: FilterCriteria; filterSheetOpen?: boolean;
+            filterPicker?: { name: 'projects' | 'tokens'; query?: string; offset?: number; limit?: number; revision?: string };
             /** The bulk bar's open token picker, searched by `query`; later pages send the view's `revision`. */
             picker?: { field: BulkTaskTokenField; mode: BulkTaskTokenMode; query?: string; offset?: number; limit?: number; revision?: string };
             offset: number; limit: number; revision?: string;
@@ -4880,7 +4895,17 @@ function createListViewMethods(deps: ListViewDeps) {
             const ready = deps.readiness();
             if (!ready.ok) return ready;
             const picker = isObjectRecord(input) ? input.picker : undefined;
+            const filterPicker = isObjectRecord(input) ? input.filterPicker : undefined;
+            const filters = readFilterState(isObjectRecord(input) ? input.filters : undefined);
             if (!isObjectRecord(input) || !isWindow(input)
+                || !filters || (input.filterEdit !== undefined && !isFilterEdit(input.filterEdit))
+                || (input.savedFilterId !== undefined && input.savedFilterId !== null && (typeof input.savedFilterId !== 'string' || input.savedFilterId.length > 200))
+                || (input.preservedCriteria !== undefined && !isPreservedFilterCriteria(input.preservedCriteria))
+                || (input.filterSheetOpen !== undefined && typeof input.filterSheetOpen !== 'boolean')
+                || (filterPicker !== undefined && !(isObjectRecord(filterPicker)
+                    && (filterPicker.name === 'projects' || filterPicker.name === 'tokens')
+                    && (filterPicker.query === undefined || (typeof filterPicker.query === 'string' && filterPicker.query.length <= 500))
+                    && isWindow({ offset: filterPicker.offset ?? 0, limit: filterPicker.limit ?? NATIVE_HOST_MAX_WINDOW, revision: filterPicker.revision })))
                 || (input.tokens !== undefined && !isStringList(input.tokens, 500))
                 || (input.matchMode !== undefined && input.matchMode !== 'all' && input.matchMode !== 'any')
                 || (input.searchQuery !== undefined && (typeof input.searchQuery !== 'string' || input.searchQuery.length > 2000))
@@ -4895,6 +4920,7 @@ function createListViewMethods(deps: ListViewDeps) {
             const revision = deps.revision(now);
             if (input.revision !== undefined && input.revision !== revision) return fail('STALE_REVISION', 'Contexts changed; restart paging from offset zero');
             if ((picker?.offset ?? 0) > 0 && picker?.revision !== revision) return fail('STALE_REVISION', 'Contexts changed; open the picker again');
+            if ((filterPicker?.offset ?? 0) > 0 && filterPicker?.revision !== revision) return fail('STALE_REVISION', 'Contexts changed; open the filter picker again');
             const t = deps.t();
             const tokens = input.tokens ?? [];
             const matchMode = resolveContextsMatchMode(tokens, input.matchMode ?? 'all');
@@ -4908,13 +4934,16 @@ function createListViewMethods(deps: ListViewDeps) {
                 const offset = picker.offset ?? 0;
                 return { field, mode, total: items.length, items: items.slice(offset, offset + (picker.limit ?? NATIVE_HOST_MAX_WINDOW)) };
             };
-            const view = cached('contexts', JSON.stringify([revision, tokens, matchMode, input.searchQuery ?? '', selectedIds]), () => {
+            const view = cached('contexts', JSON.stringify([revision, tokens, matchMode, input.searchQuery ?? '', selectedIds, filters, input.filterEdit, input.savedFilterId, input.preservedCriteria, input.filterSheetOpen]), () => {
                 const { state, areaById, projectById, selection } = areaScope();
-                // Counted once per data change, whatever the selection.
-                const index = cached('contexts-index', deps.dataRevision(), () => buildContextsTokenIndex(
-                    // Mobile's visible tasks: the store's tasks in the selected area, outside parked projects.
-                    state.tasks.filter((task) => isTaskVisibleInArea(task, { areaById, projectById, resolvedAreaFilter: selection })),
-                ));
+                const filter = buildContextsFilterModel({
+                    tasks: state.tasks.filter((task) => isTaskVisibleInArea(task, { areaById, projectById, resolvedAreaFilter: selection })),
+                    projects: state.projects, settings: state.settings,
+                    filters: input.filterSheetOpen && !input.savedFilterId && filters.statuses === undefined
+                        ? { ...filters, statuses: [...CONTEXTS_FILTER_STATUSES] } : filters, edit: input.filterEdit,
+                    savedFilterId: input.savedFilterId, preservedCriteria: input.preservedCriteria, t,
+                });
+                const index = buildContextsTokenIndex(filter.tasks, { includeFinished: true });
                 const model = buildContextsViewModel({ index, settings: state.settings, selectedTokens: tokens, matchMode, searchQuery: input.searchQuery ?? '' });
                 const next = (nextTokens: string[], nextMode: ContextOrTagMatchMode) => ({ tokens: nextTokens, matchMode: resolveContextsMatchMode(nextTokens, nextMode) });
                 const labels = getContextsMatchModeLabels(t);
@@ -4924,6 +4953,7 @@ function createListViewMethods(deps: ListViewDeps) {
                 const chipLabels = model.filterSections.flatMap((section) => getContextsChipLabels(section.tokens));
                 return {
                     model,
+                    filter,
                     selected,
                     taskRevisions: taskRevisionsOf(selected),
                     chips: [
@@ -4967,6 +4997,40 @@ function createListViewMethods(deps: ListViewDeps) {
                 version: NATIVE_HOST_CONTRACT_VERSION,
                 revision,
                 selection: { tokens, matchMode },
+                filters: {
+                    ...nativeFilterView(view.filter.resolved, view.filter.options, [], view.filter.options.projects?.map((project) => ({
+                        ...project, selected: view.filter.resolved.state.projects.includes(project.id),
+                        excluded: view.filter.resolved.state.excludedProjects?.includes(project.id) ?? false,
+                        edit: { type: 'cycleProject' as const, value: project.id },
+                    })) ?? null, t),
+                    statuses: CONTEXTS_FILTER_STATUSES.map((value) => ({ value, label: t(`status.${value}`),
+                        selected: view.filter.resolved.state.statuses?.includes(value) ?? false,
+                        edit: { type: 'toggleStatus' as const, value } })),
+                },
+                filterChips: view.filter.resolved.chips.map((chip) => ({ ...chip, action: { filterEdit: chip.edit } })),
+                criteria: getContextsSaveCriteria(view.filter.criteria, tokens, matchMode, [input.searchQuery ?? '', view.filter.resolved.searchQuery]) ?? view.filter.criteria,
+                preservedCriteria: view.filter.preservedCriteria,
+                savedFilterId: view.filter.activeSavedFilter?.id ?? null,
+                savedFilters: firstWindow(view.filter.savedFilters.map((filter) => ({ id: filter.id, name: filter.name,
+                    selected: view.filter.activeSavedFilter?.id === filter.id }))),
+                canSave: !view.filter.activeSavedFilter && (tokens.length > 0 || view.filter.resolved.hasActive)
+                    && getContextsSaveCriteria(view.filter.criteria, tokens, matchMode, [input.searchQuery ?? '', view.filter.resolved.searchQuery]) !== null && !(input.searchQuery ?? '').trim()
+                    && !view.filter.resolved.searchQuery.trim(),
+                saveControls: (() => {
+                    const criteria = getContextsSaveCriteria(view.filter.criteria, tokens, matchMode, [input.searchQuery ?? '', view.filter.resolved.searchQuery]);
+                    return criteria && !(input.searchQuery ?? '').trim() && !view.filter.resolved.searchQuery.trim()
+                        ? { ...DEFAULT_FOCUS_CONTROL_STATE, preservedCriteria: criteria, sortBy: view.model.sortBy } : null;
+                })(),
+                filterPicker: filterPicker ? (() => {
+                    const query = filterPicker.query ?? '';
+                    const items = (filterPicker.name === 'projects' ? view.filter.options.projects ?? [] : [])
+                        .filter((project) => matchesPickerQuery(project.title, query))
+                        .map((project) => ({ ...project, selected: view.filter.resolved.state.projects.includes(project.id),
+                            excluded: view.filter.resolved.state.excludedProjects?.includes(project.id) ?? false,
+                            edit: { type: 'cycleProject' as const, value: project.id } }));
+                    return { name: filterPicker.name, query, total: items.length,
+                        items: items.slice(filterPicker.offset ?? 0, (filterPicker.offset ?? 0) + (filterPicker.limit ?? NATIVE_HOST_MAX_WINDOW)) };
+                })() : null,
                 searchPlaceholder: t('contexts.search'),
                 chips: view.chips,
                 matchMode: view.matchMode,

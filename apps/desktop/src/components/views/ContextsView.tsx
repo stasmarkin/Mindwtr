@@ -2,6 +2,20 @@ import { useState, useEffect, useMemo, useCallback, useRef, type DragEvent, type
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
     useTaskStore,
+    selectContextsFilterTasks,
+    countActiveFilterCriteria,
+    getContextsSaveCriteria,
+    CONTEXTS_FILTER_STATUSES,
+    getFocusProjectFilterOptions,
+    getTaskMetadataFilterVisibility,
+    resolveFeatureFlags,
+    normalizeSavedFilters,
+    generateUUID,
+    updateSettingsFromLatest,
+    formatTimeEstimateLabel,
+    SAVED_FILTER_NO_PROJECT_ID,
+    TIME_ESTIMATE_OPTIONS,
+    type SavedFilter,
     taskMatchesContextOrTagSelection,
     shallow,
     sortTasksBy,
@@ -25,6 +39,9 @@ import {
 } from '@mindwtr/core';
 import { AtSign, CheckSquare, ChevronDown, ChevronRight, Filter, Hash, List, Tag, type LucideIcon } from 'lucide-react';
 import { TokenPickerModal } from '../TokenPickerModal';
+import { PromptModal } from '../PromptModal';
+import { AgendaFiltersPanel } from './agenda/AgendaFiltersPanel';
+import { useTaskFilterSelections } from '@mindwtr/core/task-filter-selections';
 import { BulkSelectionToolbar } from './list/BulkSelectionToolbar';
 import { ListBulkActions } from './list/ListBulkActions';
 import { cn } from '../../lib/utils';
@@ -174,13 +191,6 @@ export function ContextsView() {
     const clearStatusFilters = useCallback(() => {
         setStatusFilters(() => []);
     }, [setStatusFilters]);
-    const toggleStatusFilter = useCallback((value: TaskStatus) => {
-        setStatusFilters((current) => (
-            current.includes(value)
-                ? current.filter((status) => status !== value)
-                : [...current, value]
-        ));
-    }, [setStatusFilters]);
     useEffect(() => subscribeContextsTokenSelection(({ selectedContext: nextSelectedContext }) => {
         setSelectedContext(nextSelectedContext);
         setSearchQuery('');
@@ -188,6 +198,43 @@ export function ContextsView() {
     // Deleted, parked-project and out-of-area tasks are all gone from
     // `activeTasks` — one core predicate, shared with every other list.
     const { projectById: projectMap, visibleTasks: activeTasks } = useVisibleTaskContext();
+    const [filtersOpen, setFiltersOpen] = useState(false);
+    const [saveFilterOpen, setSaveFilterOpen] = useState(false);
+    const features = resolveFeatureFlags(settings);
+    const filterVisibility = useMemo(() => getTaskMetadataFilterVisibility(activeTasks, {
+        prioritiesEnabled: features.priorities, timeEstimatesEnabled: features.timeEstimates,
+    }), [activeTasks, features.priorities, features.timeEstimates]);
+    const savedContextFilters = useMemo(() => normalizeSavedFilters(settings?.savedFilters).filter((filter) =>
+        !filter.deletedAt && (filter.view === 'contexts' || filter.view === 'all')), [settings?.savedFilters]);
+    const filterSelections = useTaskFilterSelections({ view: 'list', t, visibility: filterVisibility,
+        savedFilters: savedContextFilters, rawSavedFilters: settings?.savedFilters,
+        getProjectLabel: (id) => id === SAVED_FILTER_NO_PROJECT_ID ? t('taskEdit.noProjectOption') : projectMap.get(id)?.title });
+    const projectFilterOptions = useMemo(() => getFocusProjectFilterOptions(activeTasks, projects, t), [activeTasks, projects, t]);
+    const contextCriteria = useMemo(() => ({ ...filterSelections.criteria,
+        statuses: statusFilters.length ? statusFilters : undefined }), [filterSelections.criteria, statusFilters]);
+    const saveCriteria = getContextsSaveCriteria({ ...filterSelections.currentCriteria,
+        statuses: statusFilters.length ? statusFilters : undefined }, selectedContexts, matchMode, [searchQuery]);
+    const canSaveContextFilter = saveCriteria !== null && (selectedContexts.length > 0 || Boolean(filterSelections.currentCriteria.contexts?.length || filterSelections.currentCriteria.tags?.length)) && !filterSelections.activeSavedFilter && !searchQuery.trim();
+    const changeContextStatus = (status: TaskStatus | 'all') => {
+        const next = status === 'all' ? [] : statusFilters.includes(status) ? statusFilters.filter((value) => value !== status) : [...statusFilters, status];
+        filterSelections.setStatusSelection(next);
+        setStatusFilters(() => next);
+    };
+    const applyContextSavedFilter = (filter: SavedFilter) => {
+        filterSelections.applySaved(filter);
+        setPersistedViewState((current) => ({ ...current, selectedContexts: [], statusFilters: filter.criteria.statuses ?? [], matchMode: 'all' }));
+        setSearchQuery('');
+    };
+    const saveContextFilter = (name: string) => {
+        if (!canSaveContextFilter || !saveCriteria || !name.trim()) return;
+        const stamp = new Date().toISOString();
+        const filter: SavedFilter = { id: generateUUID(), name: name.trim(), view: 'contexts', criteria: saveCriteria,
+            ...(sortBy !== 'default' ? { sortBy } : {}), createdAt: stamp, updatedAt: stamp };
+        void updateSettingsFromLatest((latest) => ({ savedFilters: [...(latest.savedFilters ?? []), filter] })).then(() => {
+            applyContextSavedFilter(filter); setSaveFilterOpen(false);
+        }).catch(() => undefined);
+    };
+
 
     useEffect(() => {
         if (!perf.enabled) return;
@@ -197,19 +244,12 @@ export function ContextsView() {
         return () => window.clearTimeout(timer);
     }, [perf.enabled]);
 
-    const hasExplicitStatusFilter = statusFilters.length > 0;
     // One memoized chain from here to sortedTasks: every step feeds a downstream
     // useMemo, the virtualizer's count and getItemKey, and the array handed to
     // useTaskSelection, so a fresh array anywhere invalidates all of them (#856).
     const scopedTasks = useMemo(() => {
-        const baseTasks = activeTasks.filter(t =>
-            t.status !== 'archived'
-            && (selectedStatusSet.has('done') || t.status !== 'done')
-        );
-        return hasExplicitStatusFilter
-            ? baseTasks.filter(t => selectedStatusSet.has(t.status))
-            : baseTasks;
-    }, [activeTasks, hasExplicitStatusFilter, selectedStatusSet]);
+        return selectContextsFilterTasks(activeTasks, contextCriteria, projects);
+    }, [activeTasks, contextCriteria, projects]);
 
     const tokenIndex = useMemo(() => buildContextsTokenIndex(scopedTasks, { includeFinished: true }), [scopedTasks]);
     const filterSections = useMemo(() => buildContextsViewFilterSections({
@@ -585,6 +625,9 @@ export function ContextsView() {
 
     return (
         <>
+            <PromptModal isOpen={saveFilterOpen} title={t('savedFilters.saveTitle')} placeholder={t('savedFilters.namePlaceholder')}
+                defaultValue={selectedContexts.join(' + ')} confirmLabel={t('common.save')} cancelLabel={t('common.cancel')}
+                onConfirm={saveContextFilter} onCancel={() => setSaveFilterOpen(false)} />
             <div className="h-full px-4 pt-3">
                 <div className="mx-auto flex h-full w-full max-w-[84rem] min-w-0 gap-0 lg:gap-5 xl:gap-6 2xl:max-w-[88rem]">
                     {/* Sidebar List of Contexts */}
@@ -729,6 +772,13 @@ export function ContextsView() {
                             )}
                             <div className="order-4 w-full lg:order-none lg:ml-auto lg:w-auto">
                                 <div className="flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2">
+                                    <ToolbarButton active={filtersOpen} icon={<Filter className="h-3.5 w-3.5" />} onClick={() => {
+                                        if (!filtersOpen && statusFilters.length === 0 && !filterSelections.activeSavedFilter) {
+                                            filterSelections.setStatusSelection([...CONTEXTS_FILTER_STATUSES]);
+                                            setStatusFilters(() => [...CONTEXTS_FILTER_STATUSES]);
+                                        }
+                                        setFiltersOpen((open) => !open);
+                                    }}>{t('filters.label')}</ToolbarButton>
                                     <ToolbarButton
                                         active={selectionMode}
                                         data-task-selection-toggle
@@ -763,6 +813,40 @@ export function ContextsView() {
                                 </div>
                             </div>
                         </header>
+                        {savedContextFilters.length > 0 && <div className="mb-3 flex flex-wrap gap-2">
+                            {savedContextFilters.map((filter) => <button key={filter.id} type="button" aria-pressed={filterSelections.activeSavedFilterId === filter.id}
+                                className={cn('rounded-full border px-3 py-1.5 text-sm', filterSelections.activeSavedFilterId === filter.id ? 'bg-primary text-primary-foreground' : 'bg-muted')}
+                                onClick={() => {
+                                    if (filterSelections.activeSavedFilterId === filter.id) {
+                                        filterSelections.clear(); clearStatusFilters(); setSelectedContext(null);
+                                    } else applyContextSavedFilter(filter);
+                                }}>{filter.name}</button>)}
+                        </div>}
+                        {filtersOpen && <AgendaFiltersPanel t={t} showFiltersPanel={filtersOpen} onToggleFiltersOpen={() => setFiltersOpen(false)}
+                            activeFilterChips={[
+                                ...filterSelections.chips.filter((chip) => !chip.id.startsWith('status:')).map((chip) => ({ ...chip, onRemove: chip.onPress })),
+                                ...statusFilters.map((status) => ({ id: `status:${status}`, label: t(`status.${status}`),
+                                    onRemove: () => changeContextStatus(status) })),
+                            ]}
+                            hasFilters={countActiveFilterCriteria(contextCriteria) > 0} onClearFilters={() => { filterSelections.clear(); clearStatusFilters(); }}
+                            allTokens={[]} showTokenFilters={false} selectedTokens={[]} excludedTokens={[]} onToggleToken={filterSelections.toggleToken}
+                            contextMatchMode={filterSelections.contextMatchMode} tagMatchMode={filterSelections.tagMatchMode}
+                            contextMatchModeLabels={{ title: '', any: '', all: '' }} tagMatchModeLabels={{ title: '', any: '', all: '' }}
+                            onContextMatchModeChange={(mode) => filterSelections.setMatchMode('context', mode)} onTagMatchModeChange={(mode) => filterSelections.setMatchMode('tag', mode)}
+                            projectOptions={projectFilterOptions.filter((project) => project.id !== SAVED_FILTER_NO_PROJECT_ID)}
+                            showNoProjectOption={projectFilterOptions.some((project) => project.id === SAVED_FILTER_NO_PROJECT_ID)}
+                            selectedProjects={filterSelections.projects} excludedProjects={filterSelections.excludedProjects} onToggleProject={filterSelections.cycleProject}
+                            showPriorityFilters={filterVisibility.priority} priorityOptions={['low', 'medium', 'high', 'urgent']}
+                            selectedPriorities={filterSelections.priorities} onTogglePriority={filterSelections.togglePriority}
+                            showEnergyLevelFilters={filterVisibility.energyLevel} energyLevelOptions={['low', 'medium', 'high']}
+                            selectedEnergyLevels={filterSelections.energyLevels} onToggleEnergy={filterSelections.toggleEnergyLevel}
+                            showTimeEstimateFilters={filterVisibility.timeEstimate} timeEstimateOptions={TIME_ESTIMATE_OPTIONS}
+                            selectedTimeEstimates={filterSelections.timeEstimates} onToggleTime={filterSelections.toggleTimeEstimate}
+                            formatEstimate={(value) => formatTimeEstimateLabel(value, { t })}
+                            showLocationFilter={filterVisibility.location} locationFilter={filterSelections.locationQuery} onLocationChange={filterSelections.setLocation}
+                            searchQuery={searchQuery} onSearchChange={setSearchQuery} excludedStateLabel={t('filters.excluded')}
+                            anyDateRange={filterSelections.anyDateRange} onAnyDateRangeChange={filterSelections.setAnyDateRange}
+                            canSaveFilter={canSaveContextFilter} onSaveFilter={() => setSaveFilterOpen(true)} saveFilterLabel={t('common.save')} />}
                         <div className="mb-4 flex flex-wrap gap-2">
                             {statusOptions.map((option) => {
                                 const isActive = option.value === 'all'
@@ -772,11 +856,7 @@ export function ContextsView() {
                                     <button
                                         key={option.value}
                                         onClick={() => {
-                                            if (option.value === 'all') {
-                                                clearStatusFilters();
-                                                return;
-                                            }
-                                            toggleStatusFilter(option.value);
+                                            changeContextStatus(option.value);
                                         }}
                                         className={cn(
                                             'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
@@ -791,7 +871,7 @@ export function ContextsView() {
                                 );
                             })}
                         </div>
-                        <div className="mb-4">
+                        {!filtersOpen && <div className="mb-4">
                             <input
                                 type="text"
                                 data-view-filter-input
@@ -801,7 +881,7 @@ export function ContextsView() {
                                 onChange={(event) => setSearchQuery(event.target.value)}
                                 className={VIEW_FILTER_INPUT}
                             />
-                        </div>
+                        </div>}
 
                         {selectionMode && (
                             <div className="mb-4">

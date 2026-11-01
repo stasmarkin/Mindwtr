@@ -29,6 +29,7 @@ import { buildTaskRowMeta, resolveTaskRowFeatures, resolveTaskRowLookup } from '
 import { buildTrashTimeline } from './task-utils';
 import { resolveNonDoneTaskSortBy } from './task-list-sort-options';
 import { generateUUID } from './uuid';
+import type { Project, Task } from './types';
 
 const fixture = loadListViewsFixture();
 const frozen = (observations: Record<string, unknown>[]) => observations.map(({ text: _text, ...rest }) => rest);
@@ -67,6 +68,49 @@ describe('native host contract: Contexts, Archive, Trash and History', () => {
         expect(await host.activate({ writeSafetyReady: true })).toEqual({ ok: true, value: null });
         return { host, recorder };
     };
+
+    it('filters multiple unfinished Context statuses before matching and retains project/area boundaries on reopen', async () => {
+        const stamp = fixture.contexts.now;
+        const task = (id: string, patch: Partial<Task> = {}): Task => ({ id, title: id, status: 'next', contexts: ['@person/emma'],
+            tags: [], areaId: 'area-a', createdAt: stamp, updatedAt: stamp, ...patch });
+        const project = (id: string, patch: Partial<Project> = {}): Project => ({ id, title: id, status: 'active', color: '#111111',
+            order: 0, tagIds: [], areaId: 'area-a', createdAt: stamp, updatedAt: stamp, ...patch });
+        const criteria = { statuses: ['next', 'someday'] as Task['status'][], excludedProjects: ['excluded'], contexts: ['@person/emma'] };
+        const part: ListViewsPart = { ...fixture.contexts, tasks: [
+            task('next'), task('someday', { status: 'someday', startTime: '2099-01-01' }), task('waiting', { status: 'waiting' }),
+            task('excluded', { projectId: 'excluded' }), task('parked', { projectId: 'parked' }),
+            task('other-area', { areaId: 'area-b' }), task('deleted', { deletedAt: stamp }), task('reference', { status: 'reference' }),
+        ], projects: [project('excluded'), project('parked', { status: 'someday' })],
+        areas: ['area-a', 'area-b'].map((id, order) => ({ id, name: id, order, createdAt: stamp, updatedAt: stamp })),
+        settings: { contextFilters: { filters: { areaId: 'area-a' }, savedFilters: [{ id: 'emma', name: 'Emma', view: 'contexts', criteria,
+            createdAt: stamp, updatedAt: stamp }] } } };
+        const { host } = await openHost(part, { name: 'Context filters', settings: 'contextFilters', actions: [] });
+        const first = value(host.getContextsView({ tokens: ['@person/emma'], filters: { statuses: criteria.statuses, excludedProjects: criteria.excludedProjects }, offset: 0, limit: 100 }));
+        expect(first.rows.map((row) => row.id)).toEqual(['next', 'someday']);
+        expect(first.canSave).toBe(true);
+        expect(first.saveControls?.preservedCriteria).toMatchObject(criteria);
+        const searched = value(host.getContextsView({ tokens: ['@person/emma'], filters: { statuses: ['next', 'someday'], searchQuery: 'next' }, offset: 0, limit: 100 }));
+        expect(searched.rows.map((row) => row.id)).toEqual(['next']);
+        expect(searched.canSave).toBe(false);
+        expect(searched.saveControls).toBeNull();
+        expect(first.filters.statuses?.filter((option) => option.selected).map((option) => option.value)).toEqual(['next', 'someday']);
+        const reopened = value(host.getContextsView({ savedFilterId: 'emma', offset: 0, limit: 100 }));
+        expect(reopened.rows.map((row) => row.id)).toEqual(first.rows.map((row) => row.id));
+        const none = value(host.getContextsView({ tokens: ['@person/emma'], filters: { statuses: ['next'], projects: ['excluded'], excludedProjects: ['excluded'] }, offset: 0, limit: 100 }));
+        expect(none.total).toBe(0);
+        expect(none.rows).toEqual([]);
+        const legacy = value(host.getContextsView({ offset: 0, limit: 100 }));
+        expect(legacy.rows.map((row) => row.id)).toContain('reference');
+        const sheet = value(host.getContextsView({ filterSheetOpen: true, offset: 0, limit: 100 }));
+        expect(sheet.filters.state.statuses).toEqual(['inbox', 'next', 'waiting', 'someday']);
+        expect(sheet.rows.map((row) => row.id)).not.toContain('reference');
+        const clearedStatuses = value(host.getContextsView({ filterSheetOpen: true, filters: { statuses: ['someday'] }, filterEdit: { type: 'toggleStatus', value: 'someday' }, offset: 0, limit: 100 }));
+        expect(clearedStatuses.filters.state.statuses).toEqual([]);
+        const reread = value(host.getContextsView({ filterSheetOpen: true, filters: clearedStatuses.filters.state, offset: 0, limit: 100 }));
+        expect(reread.filters.state.statuses).toEqual([]);
+        expect(host.getContextsView({ filters: { excludedProjects: 'excluded' } as never, offset: 0, limit: 100 })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+        expect(host.getContextsView({ filters: { statuses: ['future'] } as never, offset: 0, limit: 100 })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    });
 
     it.each(fixture.contexts.scenarios.map((entry) => [entry.name, entry] as const))('Contexts: "%s" like mobile', async (name, entry) => {
         const { host, recorder } = await openHost(fixture.contexts, entry);

@@ -306,6 +306,8 @@ export const arOverrides: Record<string, string> = {
         'priority.urgent': 'عاجل',
         'taskEdit.editTask': 'تحرير المهمة',
         'taskEdit.checklist': 'قائمة التحقق',
+        'savedFilters.saveTitle': "حفظ الفلتر",
+        'savedFilters.namePlaceholder': "اسم الفلتر",
         'taskEdit.tab.task': 'مهمة',
         'taskEdit.tab.list': 'قائمة',
         'taskEdit.tab.view': 'منظر',

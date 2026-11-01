@@ -334,7 +334,7 @@ describe('native host contract: Focus controls', () => {
         expect(filtered.revision).toBe(view.revision);
         expect(filtered.items[0]).toMatchObject(list === 'tokens'
             ? { state: 'none', edit: { type: 'filter', edit: { type: 'toggleToken', value: '@picker-133' } } }
-            : { selected: false, edit: { type: 'filter', edit: { type: 'toggleProject', value: 'picker-project-133' } } });
+            : { selected: false, edit: { type: 'filter', edit: { type: 'cycleProject', value: 'picker-project-133' } } });
         for (const empty of ['', ' \t\n ']) {
             expect(value(host.getFocusControlsList({ ...input, query: empty }))).toEqual(unfiltered);
         }
@@ -447,6 +447,29 @@ describe('native host contract: Focus controls', () => {
         expect(await host.reorderFocus({ ...input(), ids: ['f3', 'f1', 'f2'] } as never)).toMatchObject(invalid);
         expect(await host.reorderFocus({ ...input(), ids: ['f3', 'f1', 'f2'], taskRevisions: twoRevisions })).toMatchObject(invalid);
         expect(focusControlsWrites()).toEqual([]);
+    });
+
+    it('saves a Contexts filter through the Android command and preserves its scope on restart', async () => {
+        freezeClock();
+        const host = await openHost('base');
+        const requestId = generateUUID();
+        const controls = { ...DEFAULT_FOCUS_CONTROL_STATE, preservedCriteria: {
+            contexts: ['@person/Emma'], statuses: ['next' as const, 'someday' as const], excludedProjects: ['shared-project'],
+        } };
+        const input = { requestId, controls, name: 'Emma', view: 'contexts' as const };
+        value(await host.saveFocusFilter(input));
+        expect(useTaskStore.getState().settings.savedFilters?.find((filter) => filter.id === requestId))
+            .toMatchObject({ view: 'contexts', criteria: controls.preservedCriteria });
+        const restarted = createNativeHostContract();
+        await restarted.setLanguage({ storedLanguage: 'en', systemLocale: 'en-US' });
+        await restarted.activate({ writeSafetyReady: true });
+        expect(value(await restarted.saveFocusFilter(input))).toMatchObject({ changed: false });
+        expect(focusControlsWrites()).toHaveLength(1);
+        expect(await restarted.saveFocusFilter({ ...input, controls: { ...controls,
+            preservedCriteria: { ...controls.preservedCriteria, excludedProjects: [] } } }))
+            .toMatchObject({ ok: false });
+        expect(await host.saveFocusFilter({ ...input, requestId: generateUUID(), view: 'all' as never }))
+            .toMatchObject({ ok: false });
     });
 
     it('writes nothing again for a target already reached, even after a restart', async () => {

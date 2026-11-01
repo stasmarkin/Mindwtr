@@ -438,6 +438,8 @@ export const faOverrides: Record<string, string> = {
         'taskEdit.aiAssistant': 'دستیار هوش مصنوعی',
         'task.dateIssue.startAfterDue': 'شروع بعد از تاریخ سررسید است',
         'taskEdit.checklist': 'چک‌لیست',
+        'savedFilters.saveTitle': "ذخیرهٔ فیلتر",
+        'savedFilters.namePlaceholder': "نام فیلتر",
         'taskEdit.tab.task': 'کار',
         'taskEdit.tab.list': 'فهرست',
         'taskEdit.tab.view': 'نما',

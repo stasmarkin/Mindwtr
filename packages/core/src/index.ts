@@ -432,3 +432,4 @@ export type { NativeInboxOrganizeDestinationCreateRequest, NativeInboxOrganizeDe
     NativeInboxOrganizeDestinationCreatePreparation } from './native-host-contract-inbox-organize-create';
 
 export { getSavedTaxonomyTokens, normalizeTaxonomyToken, isTaxonomyCatalog, mergeTaxonomyCatalog } from './taxonomy-catalog';
+export { CONTEXTS_FILTER_STATUSES, buildContextsFilterModel, getContextsSaveCriteria, selectContextsFilterTasks } from './contexts-filter';
