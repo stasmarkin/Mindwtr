@@ -18,6 +18,10 @@ large-5000 and 1k fixtures, interleaved A/B on archived APKs in quiet windows.
   that knows its changed ids. This is a persistence change: guardrails and an Opus review apply.
 - **Rejected or withdrawn:** skipping hidden-list reads after a write (a stale tap target); merging Pomodoro reads (stale presentation);
   "rawReadRow bypasses #766" (wrong: raw rows exist only for `getData({ rawTasks: true })`, and the recheck is pinned).
+- **Reminder plan (H3c follow-up, 10-29):** [evidence](native-android-reminder-plan-2026-10-29.md). Lazy lookup maps (T1) and skipping
+  undated tasks (T2a) cut `core:remindersCycle` on a hot return from 34.3 to 5.2 ms with no dated task and from 67.1 to 43.2 ms with 20%
+  dated (S23, n = 6 per cell). Shared core, so RN and iOS plan faster too; a frozen corpus proves byte-identical output. First frame and
+  settled do not move: the cycle runs 365–447 ms after the return, after the screen settles. A plan cache stays closed.
 
 September 15 shared-core update: [archive reactivation candidate validation](archive-reactivation-2026-09-15.md) removes repeated full-section projections. This is synthetic core work-count evidence; native desktop and mobile latency remain unmeasured for this change.
 
