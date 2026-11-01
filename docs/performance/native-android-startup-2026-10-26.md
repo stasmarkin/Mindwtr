@@ -82,6 +82,9 @@ interaction is traced on its own (`h2h.mjs`, `h2h-analyze.mjs`, raw files in `h2
 
 Native is behind in two places: **save** (2.4x RN) and, slightly, **app-caused scroll misses**.
 
+**Correction (2026-11-01):** save is not a gap. Native's save "settled" is the keyboard's hide animation. The saved row shows
+sooner on native (124 vs 189 ms at 5k). See [native Android save, 2026-11-01](native-android-save-2026-11-01.md).
+
 Metric notes:
 - **Capture "settled" is not compared.** Native re-lays out with the keyboard on every frame of its animation, and RN lays out once. So
   native's app frames run to about 726 ms while the keyboard itself was fully shown earlier on native (668 vs 741 ms).

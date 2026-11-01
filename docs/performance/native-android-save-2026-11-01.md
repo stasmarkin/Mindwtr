@@ -69,6 +69,26 @@ New row visible after every save: 36 of 36. Per-round medians agree: native 121 
 Native's settled equals its keyboard-hidden time in every sample (also at 1,000 tasks on 10-26, 335 ms, before any save fix).
 The 10-27 warm cut the save by about 165 ms and settled did not move (336 → 338). So settled measures the keyboard's slide.
 
+## The next tap after a save
+
+A second interleaved batch (`h2h2`, native, RN, RN, native, n = 18 each) tapped the new row about 0.3 s after Save, in the same
+trace. A user who sees the row then taps it lands about there. All 36 taps opened the new task's editor. Times are from each tap's
+UP event. The batch waited for gates.lock (other agents' gates ran before it, none during it); load 2.9 at the start, 2.5 at the end.
+
+| Metric (ms), median [min–max] | Native `9cce7e496` | RN `b27d017a0` |
+| --- | ---: | ---: |
+| Next tap, after the Save tap | 323 [310–340] | 324 [305–337] |
+| Work thread last busy after the Save tap | 209 [194–241] | 204 [154–336] |
+| Next tap → its work starts (native core read) | 2 [1–7] | |
+| Next tap → editor settled | **80** [66–91] | 159 [148–203] |
+
+- **Native takes the next tap at once.** Its core thread is done with the save's reads (the visible list, then Focus, Projects and
+  Pomodoro) by about 209 ms. The tap's editor read starts 2 ms after the tap.
+- **RN's JS thread is free at about the same time** (204 ms), but in a few samples it was still busy when the tap came (up to 336 ms).
+- From the Save tap to the next screen fully open: about 403 ms on native, 483 ms on RN.
+- "Work thread" is native's `mindwtr-core` sections of at least 1 ms, and RN's `mqt_v_js` runs of at least 5 ms.
+- The 403 and 483 ms are sums of medians, not measured per sample.
+
 ## Judgment calls
 
 1. **No incremental save.** It saves at most about 12.5 ms of the native row's 124 ms, and nothing of settled. Its fallback set

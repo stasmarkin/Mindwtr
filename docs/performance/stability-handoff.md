@@ -15,6 +15,8 @@ large-5000 and 1k fixtures, interleaved A/B on archived APKs in quiet windows.
   (medians, 5k, n = 18 each). Native's "settled" (338 ms) is the system keyboard's hide animation, which the app follows frame by
   frame; RN's keyboard vanishes in two frames at about 170 ms. No save change can move it. So save, like capture open, compares the
   row, not settled. The exact incremental save was not built: the full-snapshot walk it would remove is about 12.5 ms.
+  The next tap after a save is not held up either: tapping the new row about 0.3 s after Save opens its editor in 80 ms on
+  native vs 159 ms on RN (n = 18 each); native's core is done with the save's reads by about 209 ms.
 - **Limits:** one phone; n = 8–20 per cell; the save and tab metrics end on animation frames. The H2H RN build carried a local scheme patch,
   now committed as `eb1782e1f`. RN's row time is inferred from its Fabric mount frame.
 - **Next, if save matters again:** the store update and its listeners (7–17 ms), the parse options rebuild inside the save (about
