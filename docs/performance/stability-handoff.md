@@ -10,12 +10,16 @@ large-5000 and 1k fixtures, interleaved A/B on archived APKs in quiet windows.
   (−139 ms; shared core, so RN and desktop load faster too); the widget build no longer runs twice and waits for a quiet core (first tap
   right after first content: 348 → 121 ms); after a command, the screen on show is read first (save's row about 40 ms sooner).
 - **Head to head with RN:** native leads on cold and warm start, tab switch, editor open, capture open (keyboard shown), and scroll frame
-  time. Save is native's remaining gap: 338 vs 173 ms settled at 5k. Almost all of it is `core:captureSubmit` (230–250 ms), the
-  snapshot save walking every row in QuickJS.
+  time. The 10-27 first-save warm cut `core:captureSubmit` at 5k from about 245 to 52–88 ms.
+- **Save (S2, [2026-11-01 report](native-android-save-2026-11-01.md)):** native shows the saved row sooner than RN: 124 vs 189 ms
+  (medians, 5k, n = 18 each). Native's "settled" (338 ms) is the system keyboard's hide animation, which the app follows frame by
+  frame; RN's keyboard vanishes in two frames at about 170 ms. No save change can move it. So save, like capture open, compares the
+  row, not settled. The exact incremental save was not built: the full-snapshot walk it would remove is about 12.5 ms.
 - **Limits:** one phone; n = 8–20 per cell; the save and tab metrics end on animation frames. The H2H RN build carried a local scheme patch,
-  now committed as `eb1782e1f`.
-- **Next hypothesis (S2):** split `captureSubmit` with the probe build's save-step sections, then an exact incremental save for a write
-  that knows its changed ids. This is a persistence change: guardrails and an Opus review apply.
+  now committed as `eb1782e1f`. RN's row time is inferred from its Fabric mount frame.
+- **Next, if save matters again:** the store update and its listeners (7–17 ms), the parse options rebuild inside the save (about
+  7 ms), `addTasks`' full-list copies (about 5 ms), and `core:menuRead` (22–35 ms) before the row's frame. None is persistence.
+  Whether native should snap the keyboard away like RN is a UI decision for dd, not a performance fix.
 - **Rejected or withdrawn:** skipping hidden-list reads after a write (a stale tap target); merging Pomodoro reads (stale presentation);
   "rawReadRow bypasses #766" (wrong: raw rows exist only for `getData({ rawTasks: true })`, and the recheck is pinned).
 - **Reminder plan (H3c follow-up, 10-29):** [evidence](native-android-reminder-plan-2026-10-29.md). Lazy lookup maps (T1) and skipping
