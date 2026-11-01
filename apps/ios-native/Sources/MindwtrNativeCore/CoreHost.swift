@@ -21549,7 +21549,9 @@ private final class Engine: @unchecked Sendable {
             guard let args = try NativeJSON.jsonObject(with: Data(command.argumentsJSON.utf8)) as? [String], args.count == 1,
                   let input = try NativeJSON.jsonObject(with: Data(args[0].utf8)) as? [String: Any],
                   Set(input.keys) == Set(["request", "prepared"]), let request = input["request"] as? [String: Any],
-                  let prepared = input["prepared"] as? [String: Any], Self.isInteger(prepared["version"], equalTo: 1),
+                  let prepared = input["prepared"] as? [String: Any],
+                  (Self.isInteger(prepared["version"], equalTo: 1)
+                      || Self.isInteger(prepared["version"], equalTo: 2) && (request["action"] as? [String: Any])?["type"] as? String == "duplicateTask"),
                   Set(prepared.keys) == (((request["action"] as? [String: Any])?["type"] as? String == "moveCard")
                       ? Set(["version", "request", "before", "after", "deviceIdToInitialize", "result", "move"])
                       : Set(["version", "request", "before", "after", "deviceIdToInitialize", "result"])),

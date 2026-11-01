@@ -54,6 +54,7 @@ const RELEASE_CHECK_FIELD_NAMES = [
     // follow-up-idle-badge reuses releaseCheck and backend below.
     // ios-native-text-decode: bytes is the response body's size; no content or URL.
     'bytes',
+    'version', // Prepared duplicate journal version; no task content.
     // local-change-upload reuses releaseCheck, source and delayMs; adaptiveWaitMs is the skipped adaptive wait.
     'adaptiveWaitMs',
     // windowless-sync: existing periodic timer timing and lifecycle gates only.

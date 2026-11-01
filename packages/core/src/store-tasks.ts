@@ -1130,7 +1130,6 @@ export function buildDuplicateTask({ sourceTask, asNextAction, copyId, now, devi
     const duplicatedChecklist = (sourceTask.checklist || []).map((item) => ({
         ...item,
         id: generateId(),
-        isCompleted: false,
     }));
     const duplicatedAttachments = (sourceTask.attachments || []).flatMap((attachment) => {
         if (attachment.kind === 'file') {

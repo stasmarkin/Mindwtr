@@ -81,7 +81,7 @@ export const matchesDuplicateSource = (source: Task, copy: Task, asNextAction = 
     const recurrence = typeof source.recurrence === 'object' && source.recurrence
         ? normalizeRecurrenceForLoad({ ...source.recurrence, seriesId: copy.id }) : source.recurrence;
     if (JSON.stringify(recurrence) !== JSON.stringify(copy.recurrence)) return false;
-    const checklist = (source.checklist ?? []).map((item) => ({ ...item, id: '', isCompleted: false }));
+    const checklist = (source.checklist ?? []).map((item) => ({ ...item, id: '' }));
     if (JSON.stringify(checklist) !== JSON.stringify((copy.checklist ?? []).map((item) => ({ ...item, id: '' })))) return false;
     const links = (source.attachments ?? []).filter((item) => item.kind !== 'file').map((item) => ({
         ...item, id: '', createdAt: copy.createdAt, updatedAt: copy.createdAt,

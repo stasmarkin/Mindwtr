@@ -8683,7 +8683,7 @@ final class CoreHostTests: XCTestCase {
         XCTAssertEqual(copy["rev"] as? Int, 1)
         let checklist = try JSONSerialization.jsonObject(with: Data(XCTUnwrap(copy["checklist"] as? String).utf8)) as? [[String: Any]]
         let attachments = try JSONSerialization.jsonObject(with: Data(XCTUnwrap(copy["attachments"] as? String).utf8)) as? [[String: Any]]
-        XCTAssertEqual(checklist?.count, 1); XCTAssertEqual(checklist?.first?["isCompleted"] as? Bool, false)
+        XCTAssertEqual(checklist?.count, 1); XCTAssertEqual(checklist?.first?["isCompleted"] as? Bool, true)
         XCTAssertNotEqual(checklist?.first?["id"] as? String, "old-step")
         XCTAssertEqual(attachments?.count, 1); XCTAssertEqual(attachments?.first?["kind"] as? String, "link")
         XCTAssertNotEqual(attachments?.first?["id"] as? String, "old-link")
@@ -8704,7 +8704,7 @@ final class CoreHostTests: XCTestCase {
     }
 
     func testPreparedBoardDuplicateRestartReturnsExactRecoveryOnlyAfterCleanup() async throws {
-        for afterCommit in [false, true] {
+        for (version, afterCommit) in [(1, false), (1, true), (2, false), (2, true)] {
             let id = try await seedBoardActionFixture()
             let faults = HostIOFaults()
             let core = host(faults)
@@ -8716,14 +8716,30 @@ final class CoreHostTests: XCTestCase {
                 faults.journalWrite = { writes += 1; if writes == 2 { throw HostFailure("Injected Board lost acknowledgment") } }
             } else { faults.beforeSQL = { if $0 == "COMMIT" { throw HostFailure("Injected Board COMMIT failure") } } }
             await expectFailure { _ = try await core.call("boardAction", argumentsJSON: request) }
-            let journalBefore = try object(String(contentsOf: journal))
+            var journalBefore = try object(String(contentsOf: journal))
             XCTAssertEqual(journalBefore["method"] as? String, "boardCommit"); XCTAssertNil(journalBefore["terminal"])
-            let arguments = try XCTUnwrap(journalBefore["argumentsJSON"] as? String)
+            var arguments = try XCTUnwrap(journalBefore["argumentsJSON"] as? String)
             let args = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(arguments.utf8)) as? [String])
-            let envelope = try object(XCTUnwrap(args.first))
-            let prepared = try XCTUnwrap(envelope["prepared"] as? [String: Any])
+            var envelope = try object(XCTUnwrap(args.first))
+            var prepared = try XCTUnwrap(envelope["prepared"] as? [String: Any])
+            XCTAssertEqual(prepared["version"] as? Int, 2)
             let expected = try XCTUnwrap(prepared["result"] as? [String: Any])
             await core.close()
+            if version == 1 {
+                // Simulate an interrupted previous build, whose frozen duplicate reset checklist progress.
+                prepared["version"] = 1
+                var after = try XCTUnwrap(prepared["after"] as? [String: Any])
+                var checklist = try XCTUnwrap(after["checklist"] as? [[String: Any]])
+                for index in checklist.indices { checklist[index]["isCompleted"] = false }
+                after["checklist"] = checklist; prepared["after"] = after; envelope["prepared"] = prepared
+                arguments = try json([json(envelope)]); journalBefore["argumentsJSON"] = arguments
+                try JSONSerialization.data(withJSONObject: journalBefore, options: [.sortedKeys]).write(to: journal)
+                if afterCommit {
+                    let sqlite = try SQLiteBridge(url: database)
+                    _ = try sqlite.execute("UPDATE tasks SET checklist = ? WHERE id = ?", parametersJSON: json([json(checklist), copyID]))
+                    sqlite.close()
+                }
+            }
             // A lost reply acknowledges the unchanged copy before mutable source checks.
             if afterCommit {
                 let sqlite = try SQLiteBridge(url: database)
@@ -8743,6 +8759,8 @@ final class CoreHostTests: XCTestCase {
             await expectFailure("cleanup") { _ = try await replay.start() }
             XCTAssertEqual(writes, afterCommit ? 0 : 1); XCTAssertEqual(diagnostics, 0)
             let landed = try storedTask(copyID)
+            let landedChecklist = try JSONSerialization.jsonObject(with: Data(XCTUnwrap(landed["checklist"] as? String).utf8)) as? [[String: Any]]
+            XCTAssertEqual(landedChecklist?.first?["isCompleted"] as? Bool, version == 2)
             let terminalJournal = try object(String(contentsOf: journal))
             XCTAssertNotNil(terminalJournal["terminal"])
             XCTAssertEqual(terminalJournal["argumentsJSON"] as? String, arguments)
@@ -8920,8 +8938,9 @@ final class CoreHostTests: XCTestCase {
         var after = try XCTUnwrap(prepared["after"] as? [String: Any]); after["title"] = "Forged terminal title"
         forgedEffect["after"] = after
         var invalidDevice = prepared; invalidDevice["deviceIdToInitialize"] = [:]
+        var unsupportedVersion = prepared; unsupportedVersion["version"] = 3
         let wrongReply = try json(["changed": true, "open": ["taskId": "wrong-copy", "projectId": NSNull(), "tab": "task"]])
-        for (candidate, reply) in [(emptyRows, expected), (forgedEffect, expected), (invalidDevice, expected), (prepared, wrongReply)] {
+        for (candidate, reply) in [(emptyRows, expected), (forgedEffect, expected), (invalidDevice, expected), (unsupportedVersion, expected), (prepared, wrongReply)] {
             let encoded = try json([json(["request": request, "prepared": candidate])])
             let terminal: [String: Any] = ["version": 2, "method": "boardCommit", "argumentsJSON": encoded,
                                            "terminal": ["success": ["_0": reply]]]
