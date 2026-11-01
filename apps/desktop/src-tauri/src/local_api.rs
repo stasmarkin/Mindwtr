@@ -577,9 +577,16 @@ fn handle_connection(
     handler: &impl Fn(&LocalApiAccess, u16, ApiRequest) -> ApiResponse,
     mut stream: TcpStream,
 ) {
-    // Windows hands out accepted sockets with the listener's non-blocking mode;
-    // a read before the request arrives would fail as a 400 and abort the client.
-    let _ = stream.set_nonblocking(false);
+    // macOS and Windows can inherit the listener's nonblocking mode. Blocking
+    // reads and writes avoid rejecting an early request or truncating a large
+    // response when the socket buffer fills.
+    if let Err(error) = stream.set_nonblocking(false) {
+        log::warn!(
+            "Local HTTP connection setup failed stage=blocking errorKind={:?}",
+            error.kind()
+        );
+        return;
+    }
     let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
     let deadline = Instant::now() + REQUEST_DEADLINE;
     let response = match read_request(&mut stream, deadline) {
@@ -720,7 +727,20 @@ fn write_response(stream: &mut TcpStream, response: ApiResponse) -> Result<(), S
     // of the capped slots (I3).
     let _ = stream.set_write_timeout(Some(Duration::from_secs(5)));
     let raw = http_response(&response);
-    stream.write_all(raw.as_bytes()).map_err(|e| e.to_string())
+    stream.write_all(raw.as_bytes()).map_err(|error| {
+        log::warn!(
+            "Local HTTP response write failed errorKind={:?}",
+            error.kind()
+        );
+        error.to_string()
+    })?;
+    if raw.len() >= 256 * 1024 {
+        log::info!(
+            "Local HTTP large response completed extra.releaseCheck=v1.3.8/local-api-large-response outcome=complete bytes={}",
+            raw.len()
+        );
+    }
+    Ok(())
 }
 
 fn http_response(response: &ApiResponse) -> String {
@@ -6903,6 +6923,73 @@ mod tests {
         assert_eq!(
             stream.write_timeout().unwrap(),
             Some(Duration::from_secs(5))
+        );
+    }
+
+    #[test]
+    fn handle_connection_completes_large_utf8_response_from_nonblocking_accepted_socket() {
+        let listener = TcpListener::bind((LOCAL_API_HOST, 0)).unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let address = listener.local_addr().unwrap();
+        let mut client = TcpStream::connect(address).unwrap();
+        client
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
+        client.write_all(b"GET /tasks HTTP/1.1\r\n\r\n").unwrap();
+        let (stream, _) = listener.accept().unwrap();
+        // Model platforms that inherit the listener's mode, even on Linux,
+        // where accept() currently gives us a blocking stream.
+        stream.set_nonblocking(true).unwrap();
+        let body = json!({ "payload": "任務".repeat(1_000_000) });
+        let expected_body = serde_json::to_vec_pretty(&body).unwrap();
+        let (finished, completion) = std::sync::mpsc::channel();
+        let server = thread::spawn(move || {
+            let access = LocalApiAccess {
+                allow_write: false,
+                shutdown: Arc::new(AtomicBool::new(false)),
+            };
+            handle_connection(
+                &access,
+                address.port(),
+                &move |_, _, request| {
+                    assert_eq!(request.path, "/tasks");
+                    ApiResponse::ok(body.clone())
+                },
+                stream,
+            );
+            finished.send(()).unwrap();
+        });
+        // Wait for the first response byte without draining the socket, so
+        // JSON serialization speed cannot race the delayed reader below.
+        assert_eq!(client.peek(&mut [0_u8; 1]).unwrap(), 1);
+        // Let the send buffer fill before reading. A nonblocking write_all
+        // returns early here instead of waiting for the client to drain it.
+        let _ = completion.recv_timeout(Duration::from_millis(100));
+        let mut received = Vec::new();
+        client.read_to_end(&mut received).unwrap();
+        server.join().unwrap();
+
+        let header_end = find_header_end(&received).expect("HTTP response headers");
+        let headers = std::str::from_utf8(&received[..header_end]).unwrap();
+        assert!(headers.starts_with("HTTP/1.1 200 OK\r\n"));
+        let content_length = headers
+            .lines()
+            .find_map(|line| line.strip_prefix("Content-Length: "))
+            .unwrap()
+            .parse::<usize>()
+            .unwrap();
+        let received_body = &received[header_end + 4..];
+        assert_eq!(content_length, expected_body.len());
+        assert_eq!(
+            received_body.len(),
+            content_length,
+            "large response must contain every advertised UTF-8 byte"
+        );
+        assert_eq!(received_body, expected_body);
+        let decoded: Value = serde_json::from_slice(received_body).unwrap();
+        assert_eq!(
+            decoded["payload"].as_str().unwrap().chars().count(),
+            2_000_000
         );
     }
 
