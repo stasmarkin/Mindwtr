@@ -92,7 +92,7 @@ describe('task attachments survive completion (#836)', () => {
         );
 
         await act(async () => {
-            fireEvent.click(getAllByRole('button', { name: 'Done' })[0]);
+            fireEvent.click(getAllByRole('button', { name: 'Mark Done' })[0]);
         });
 
         await waitFor(() => {

@@ -96,6 +96,26 @@ describe('native host contract: Board', () => {
         }
     });
 
+    it('accepts its returned project chip removal without changing the other Board filters', async () => {
+        freezeClock();
+        const saveData = vi.fn().mockResolvedValue(undefined);
+        const { host, recorder } = await openHost(saveData);
+        const choices = value(host.getBoardView({ limit: 100 })).sheet.projects.items.slice(0, 2).map((project) => project.id);
+        expect(choices).toHaveLength(2);
+        const selected = value(host.getBoardView({ filters: {
+            projects: choices, tokens: ['@home'], excludedTokens: ['#later'], searchQuery: 'e', duePreset: 'overdue',
+        }, limit: 100 }));
+        saveData.mockClear();
+        const chip = selected.sheet.chips.items.find((item) => item.id === `project:${choices[0]}`)!;
+        expect(chip.edit).toEqual({ type: 'removeProject', value: choices[0] });
+        const removed = value(host.getBoardView({ filters: selected.filters, filterEdit: chip.edit, limit: 100 }));
+        expect(removed.filters).toEqual({ ...selected.filters, projects: choices.slice(1) });
+        // Removing the same chip twice remains a removal; it never toggles the project back in.
+        expect(value(host.getBoardView({ filters: removed.filters, filterEdit: chip.edit, limit: 100 })).filters).toEqual(removed.filters);
+        expect(recorder.log).toEqual([]);
+        expect(saveData).not.toHaveBeenCalled();
+    });
+
     it('speaks the host language', async () => {
         freezeClock();
         const { host } = await openHost();
@@ -440,6 +460,8 @@ describe('native host contract: Board', () => {
         expect(host.getBoardView({ filters: { tokens: '@home' } as never, limit: 1 })).toMatchObject(invalid);
         expect(host.getBoardView({ filters: { color: 'red' } as never, limit: 1 })).toMatchObject(invalid);
         expect(host.getBoardView({ filterEdit: { type: 'explode' } as never, limit: 1 })).toMatchObject(invalid);
+        expect(host.getBoardView({ filterEdit: { type: 'removeProject', value: '' }, limit: 1 })).toMatchObject(invalid);
+        expect(host.getBoardView({ filterEdit: { type: 'cycleProject', value: 'p1' } as never, limit: 1 })).toMatchObject(invalid);
         expect(host.getBoardList({ list: 'cards', offset: 0, limit: 10, revision: 'r' })).toMatchObject(invalid);
         const run = (action: unknown) => host.runBoardAction({ requestId: generateUUID(), action: action as never });
         const taskRevision = shown(host, 'n-rent');

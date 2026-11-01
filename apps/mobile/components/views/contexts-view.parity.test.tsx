@@ -43,6 +43,11 @@ vi.mock('@react-native-async-storage/async-storage', () => ({
     removeItem: async (key: string) => { harness.storage.delete(key); },
   },
 }));
+vi.mock('react-native-safe-area-context', () => ({
+  useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
+}));
+vi.mock('@/lib/use-android-keyboard-inset', () => ({ useKeyboardInset: () => 0 }));
+
 vi.mock('expo-router', () => ({ useLocalSearchParams: () => harness.route }));
 vi.mock('../../contexts/language-context', () => ({
   useLanguage: () => ({ t: (key: string) => harness.strings[key] ?? key, language: 'en' }),
@@ -60,6 +65,16 @@ vi.mock('@/hooks/use-theme-colors', () => {
 });
 vi.mock('@/lib/task-meta-navigation', () => ({ openContextsScreen: vi.fn(), openProjectScreen: vi.fn() }));
 vi.mock('@/lib/app-log', () => ({ logError: vi.fn(), logInfo: vi.fn(), logWarn: vi.fn() }));
+// Keep the historical fixture intact while honoring native visibility for the new filter sheet.
+vi.mock('../task-filter-sheet', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../task-filter-sheet')>();
+  return {
+    ...actual,
+    TaskFilterSheet: (props: React.ComponentProps<typeof actual.TaskFilterSheet>) => props.visible
+      ? React.createElement(actual.TaskFilterSheet, props)
+      : null,
+  };
+});
 vi.mock('../task-edit-modal', () => ({ TaskEditModal: (props: any) => React.createElement('TaskEditModal', props) }));
 vi.mock('../token-picker-modal', () => ({ TokenPickerModal: (props: any) => React.createElement('TokenPickerModal', props) }));
 vi.mock('../swipeable-task-item', () => ({ SwipeableTaskItem: (props: any) => React.createElement('SwipeableTaskItem', props) }));
@@ -372,9 +387,9 @@ function observe(root: ReactTestInstance, seen: { alerts: number; toasts: number
   const flatList = hostsOf(root, 'FlatList')[0];
   const emptyIcon = flatList.findAll((node) => String(node.type).startsWith('Icon:'))[0];
   const empty = rows.length === 0 && emptyIcon ? [String(emptyIcon.type), ...textsIn(flatList)] : null;
-  // The search row's Sort button (#1415) is not part of the bulk bar.
+  // Search-row Sort and Filters controls are not part of the bulk bar.
   const bulkButtons = hostsOf(root, 'TouchableOpacity')
-    .filter((node) => !node.findAll((child) => String(child.type) === 'Icon:ArrowUpDown').length);
+    .filter((node) => !node.findAll((child) => ['Icon:ArrowUpDown', 'Icon:SlidersHorizontal'].includes(String(child.type))).length);
   const bulk = bulkButtons.length > 0
     ? bulkButtons.map((node) => [buttonName(node), node.props.disabled === true])
     : null;

@@ -301,7 +301,7 @@ export const EMPTY_BOARD_FILTER_STATE: BoardFilterState = {
 };
 
 export type BoardFilterEdit =
-    | Extract<ListFilterEdit, { type: 'toggleToken' | 'removeToken' | 'toggleProject' | 'setMatchMode' | 'setSearch' | 'clear' }>
+    | Extract<ListFilterEdit, { type: 'toggleToken' | 'removeToken' | 'toggleProject' | 'removeProject' | 'setMatchMode' | 'setSearch' | 'clear' }>
     | { type: 'toggleDuePreset'; preset: BoardDuePreset }
     | { type: 'clearDuePreset' };
 

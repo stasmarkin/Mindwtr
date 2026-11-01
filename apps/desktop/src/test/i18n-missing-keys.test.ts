@@ -114,10 +114,8 @@ const KNOWN_MISSING_KEYS = new Set([
     'savedFilters.defaultName',
     'savedFilters.deleteTitle',
     'savedFilters.label',
-    'savedFilters.namePlaceholder',
     'savedFilters.save',
     'savedFilters.saveDescription',
-    'savedFilters.saveTitle',
     'settings.importTickTickSummary',
 ]);
 

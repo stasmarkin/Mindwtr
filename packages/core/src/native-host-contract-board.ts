@@ -279,6 +279,7 @@ const isFilterEdit = (edit: unknown): edit is BoardFilterEdit => {
         case 'toggleToken':
         case 'removeToken':
         case 'toggleProject':
+        case 'removeProject':
             return isText(edit.value) && (edit.value as string).length > 0;
         case 'setSearch':
             return isText(edit.value, 2000);

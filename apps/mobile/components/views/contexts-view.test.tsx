@@ -44,6 +44,11 @@ vi.mock('@mindwtr/core', async (importOriginal) => {
   };
 });
 
+vi.mock('react-native-safe-area-context', () => ({
+  useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
+}));
+vi.mock('@/lib/use-android-keyboard-inset', () => ({ useKeyboardInset: () => 0 }));
+
 vi.mock('expo-router', () => ({
   useLocalSearchParams: () => ({}),
 }));
@@ -106,6 +111,11 @@ vi.mock('react-native-gesture-handler', () => ({
 }));
 
 vi.mock('lucide-react-native', () => ({
+  SlidersHorizontal: (props: any) => React.createElement('SlidersHorizontal', props),
+  ChevronDown: (props: any) => React.createElement('ChevronDown', props),
+  ChevronRight: (props: any) => React.createElement('ChevronRight', props),
+  ChevronUp: (props: any) => React.createElement('ChevronUp', props),
+  Flag: (props: any) => React.createElement('Flag', props),
   ArrowUpDown: (props: any) => React.createElement('ArrowUpDown', props),
   CheckCircle2: (props: any) => React.createElement('CheckCircle2', props),
   Tag: (props: any) => React.createElement('Tag', props),
@@ -116,6 +126,7 @@ vi.mock('react-native', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react-native')>();
   return {
     ...actual,
+    Modal: ({ visible, children, ...props }: any) => visible ? React.createElement('Modal', props, children) : null,
     FlatList: ({ data = [], renderItem, keyExtractor, ListEmptyComponent, ...props }: any) => (
       React.createElement(
         'FlatList',
