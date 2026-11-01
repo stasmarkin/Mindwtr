@@ -353,6 +353,11 @@ export const frOverrides: Record<string, string> = {
         // Task Edit
         'taskEdit.editTask': 'Modifier la tâche',
         'taskEdit.checklist': 'Liste de contrôle',
+        'taskEdit.dragChecklistItem': "Faire glisser pour réorganiser",
+        'taskEdit.checklistItemActions': "Actions de l’élément de liste",
+        'taskEdit.moveChecklistTop': "Déplacer en haut",
+        'taskEdit.moveChecklistBottom': "Déplacer en bas",
+        'taskEdit.addChecklistBelow': "Ajouter un élément en dessous",
         'taskEdit.tab.task': 'Tâche',
         'taskEdit.tab.list': 'Liste',
         'taskEdit.tab.view': 'Vue',

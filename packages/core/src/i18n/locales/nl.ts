@@ -2,6 +2,11 @@
 export const nlOverrides: Record<string, string> = {
     'savedFilters.saveTitle': "Filter opslaan",
     'savedFilters.namePlaceholder': "Filternaam",
+    'taskEdit.dragChecklistItem': "Sleep om te ordenen",
+    'taskEdit.checklistItemActions': "Acties voor checklistitem",
+    'taskEdit.moveChecklistTop': "Naar bovenaan verplaatsen",
+    'taskEdit.moveChecklistBottom': "Naar onderaan verplaatsen",
+    'taskEdit.addChecklistBelow': "Item hieronder toevoegen",
     "settings.desktopAppLockDesc": "Vraag om Windows Hello of Touch ID (of je Mac-wachtwoord) wanneer Mindwtr opent en nadat je weg bent geweest. Dit verbergt alleen het app-venster; de macOS-widget, de lokale API en de MCP-server kunnen je gegevens nog steeds lezen.",
     "settings.desktopAppLockUnavailable": "Stel Windows Hello of een Mac-inlogwachtwoord in om de app-vergrendeling te gebruiken.",
     "appLock.lockNow": "Mindwtr vergrendelen",

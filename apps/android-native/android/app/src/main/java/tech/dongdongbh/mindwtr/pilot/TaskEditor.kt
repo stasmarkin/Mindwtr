@@ -56,6 +56,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
@@ -352,8 +354,23 @@ data class TaskEditor(
 
     fun typed(field: String, text: String) = copy(inputs = inputs + (field to text))
 
-    /** A control's edit joins the queue with the next number of this session. */
-    fun queued(edit: String, field: String?) = copy(pending = pending + PendingEdit(nextSeq, edit, field), nextSeq = nextSeq + 1)
+    /** Position-based controls wait until core has answered every edit that can shift their row. */
+    val checklistStructurePending get() = pending.any { queued ->
+        JSONObject(queued.edit).optJSONObject("checklist")?.let { checklist ->
+            when (checklist.optString("kind")) {
+                "move", "remove", "insertAfter", "add", "append" -> true
+                "rename" -> checklist.optString("text").any { it == '\n' || it == '\r' }
+                else -> false
+            }
+        } == true
+    }
+
+    /** A late native input callback must not apply its old position after a queued row move/insert/remove. */
+    fun queued(edit: String, field: String?): TaskEditor {
+        val checklist = JSONObject(edit).optJSONObject("checklist")
+        if (checklist != null && (checklist.has("index") || checklist.has("from")) && checklistStructurePending) return this
+        return copy(pending = pending + PendingEdit(nextSeq, edit, field), nextSeq = nextSeq + 1)
+    }
     /** A typed input with an edit still waiting for core keeps its own text. */
     fun pendingFor(field: String) = pending.any { it.field == field }
 
@@ -480,6 +497,9 @@ fun TaskEditorScreen(model: InboxViewModel, editor: TaskEditor) = with(model) {
     var picker by rememberSaveable { mutableStateOf<String?>(null) }
     // The form's height above the keyboard, for the fields' focus reveal (EditorInput).
     var formViewport by remember { mutableIntStateOf(0) }
+    val checklistFormScroll = rememberScrollState()
+    var checklistFormBounds by remember { mutableStateOf(Rect.Zero) }
+    var checklistDragging by remember { mutableStateOf(false) }
     // The open date picker (a date field, or "until" for the recurrence end) and the open time picker (a date field).
     var pickDate by rememberSaveable { mutableStateOf<String?>(null) }
     var pickTime by rememberSaveable { mutableStateOf<String?>(null) }
@@ -554,8 +574,11 @@ fun TaskEditorScreen(model: InboxViewModel, editor: TaskEditor) = with(model) {
         // RN's tabs under the header; a read-only task shows only its View tab.
         if (!editor.readOnly) EditorTabs(model, editor)
         if (editor.readOnly || editor.tab == "view") TaskViewTab(model, editor, locked, { picker = "status" }, follow, Modifier.weight(1f))
-        else Column(Modifier.weight(1f).imePadding().onSizeChanged { formViewport = it.height }.verticalScroll(rememberScrollState()).padding(20.dp)) {
-            CompositionLocalProvider(LocalFormViewport provides formViewport) {
+        else Column(Modifier.weight(1f).imePadding().onSizeChanged { formViewport = it.height }
+            .onGloballyPositioned { checklistFormBounds = it.boundsInWindow() }
+            .verticalScroll(checklistFormScroll, enabled = !checklistDragging).padding(20.dp)) {
+            CompositionLocalProvider(LocalFormViewport provides formViewport,
+                LocalChecklistFormScroll provides ChecklistFormScroll(checklistFormScroll, checklistFormBounds) { checklistDragging = it }) {
                 if (editor.readOnly) Text(t("projects.archivedReadOnlyHint"), style = rnText(14, 400), color = c.secondaryText,
                     modifier = Modifier.padding(bottom = 16.dp))
                 FormGroup {

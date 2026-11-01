@@ -149,7 +149,7 @@ export type TaskChecklistFieldModel = {
     canAdd: boolean;
     /** Reset checklist shows under a list with items (a reference list too). */
     canReset: boolean;
-    labels: { reorder: string; done: string; add: string; reset: string; placeholder: string };
+    labels: { reorder: string; done: string; add: string; reset: string; placeholder: string; drag: string; actions: string; moveTop: string; moveBottom: string; addBelow: string };
     items: TaskChecklistFieldItem[];
 };
 
@@ -174,6 +174,11 @@ export function buildTaskChecklistFieldModel(input: {
             add: t('taskEdit.addItem'),
             reset: t('taskEdit.resetChecklist'),
             placeholder,
+            drag: t('taskEdit.dragChecklistItem'),
+            actions: t('taskEdit.checklistItemActions'),
+            moveTop: t('taskEdit.moveChecklistTop'),
+            moveBottom: t('taskEdit.moveChecklistBottom'),
+            addBelow: t('taskEdit.addChecklistBelow'),
         },
         items: items.map((item, index) => {
             const orderTitle = item.title.trim() || placeholder;

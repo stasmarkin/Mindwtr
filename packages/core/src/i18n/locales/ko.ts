@@ -447,6 +447,11 @@ export const koOverrides: Record<string, string> = {
         // Task Edit
         'taskEdit.editTask': '할 일 편집',
         'taskEdit.checklist': '체크리스트',
+        'taskEdit.dragChecklistItem': "드래그하여 순서 변경",
+        'taskEdit.checklistItemActions': "체크리스트 항목 작업",
+        'taskEdit.moveChecklistTop': "맨 위로 이동",
+        'taskEdit.moveChecklistBottom': "맨 아래로 이동",
+        'taskEdit.addChecklistBelow': "아래에 항목 추가",
         'taskEdit.tab.task': '할 일',
         'taskEdit.tab.list': '목록',
         'taskEdit.tab.view': '보기',

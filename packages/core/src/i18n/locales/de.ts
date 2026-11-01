@@ -377,6 +377,11 @@ export const deOverrides: Record<string, string> = {
         // Task Edit
         'taskEdit.editTask': 'Aufgabe bearbeiten',
         'taskEdit.checklist': 'Checkliste',
+        'taskEdit.dragChecklistItem': "Zum Neuordnen ziehen",
+        'taskEdit.checklistItemActions': "Aktionen für Checklisteneintrag",
+        'taskEdit.moveChecklistTop': "Ganz nach oben",
+        'taskEdit.moveChecklistBottom': "Ganz nach unten",
+        'taskEdit.addChecklistBelow': "Eintrag darunter hinzufügen",
         'taskEdit.tab.task': 'Aufgabe',
         'taskEdit.tab.list': 'Liste',
         'taskEdit.tab.view': 'Ansicht',

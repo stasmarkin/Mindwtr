@@ -812,13 +812,27 @@ function renderChecklistField(scenario: ChecklistFieldScenario) {
   return renderer;
 }
 
+// Keep the historical content/control fixture authoritative for editing semantics.
+// Dedicated drag UI has its own behavioral tests; it adds no new stored field.
+function withoutChecklistDragAffordance(node: Json): Json {
+  if (String(node.props.testID ?? '').startsWith('mobile-checklist-row-')) {
+    return withoutChecklistDragAffordance(elements(node)[0]);
+  }
+  const props = { ...node.props };
+  if (styleNames(node.props.style).includes('checklistContainer')) delete props.ref;
+  return { ...node, props, children: node.children?.filter((child) => typeof child === 'string'
+    || !String(child.props.testID ?? '').startsWith('mobile-checklist-drag-'))
+    .map((child) => typeof child === 'string' ? child : withoutChecklistDragAffordance(child)) ?? node.children };
+}
+
 function runChecklistField(scenario: ChecklistFieldScenario) {
   const fresh = () => {
     harness.uuid = 0;
     return renderChecklistField(scenario);
   };
   const renderer = fresh();
-  const out: Record<string, unknown> = { tree: tree(renderer), read: readChecklistField(renderer.toJSON() as Json) };
+  const projected = withoutChecklistDragAffordance(renderer.toJSON() as Json);
+  const out: Record<string, unknown> = { tree: JSON.stringify(projected), read: readChecklistField(projected) };
   act(() => renderer.unmount());
   const rows = (current: ReturnType<typeof create>) => current.root.findAll((node) => (
     typeof node.type === 'string' && styleNames(node.props.style).includes('checklistItem')
@@ -831,7 +845,8 @@ function runChecklistField(scenario: ChecklistFieldScenario) {
     const [kind, index, value] = action as [string, number, string];
     let after: unknown = null;
     const row = () => rows(current)[index];
-    const hostChildren = (node: any) => node.children.filter((child: any) => typeof child !== 'string');
+    const hostChildren = (node: any) => node.children.filter((child: any) => typeof child !== 'string'
+      && !String(child.props.testID ?? '').startsWith('mobile-checklist-drag-'));
     if (kind === 'toggle') {
       act(() => { hostChildren(row())[0].props.onPress?.(); });
     } else if (kind === 'change') {

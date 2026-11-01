@@ -917,7 +917,8 @@ assert.match(editorUi, /if \(field\.text != value\) field = TextFieldValue\(valu
 // again as the form shrinks with the keyboard; Compose alone brings only the cursor line in.
 assert.match(editorUi, /LaunchedEffect\(focused, viewport\) \{\s+if \(focused && viewport > 0\) reveal\.bringIntoView\(Rect\(0f, 0f, size\.width\.toFloat\(\), focusRevealBottom\(size\.height, viewport\)\)\)/);
 assert.match(editorUi, /modifier = Modifier\.bringIntoViewRequester\(reveal\)\.onSizeChanged \{ size = it \}\.onFocusChanged \{ if \(focused && !it\.isFocused\) commit\?\.invoke\(\); focused = it\.isFocused \}/);
-assert.match(editorUi, /\.imePadding\(\)\.onSizeChanged \{ formViewport = it\.height \}\.verticalScroll\(rememberScrollState\(\)\)/);
+assert.match(editorUi, /val checklistFormScroll = rememberScrollState\(\)/);
+assert.match(editorUi, /\.imePadding\(\)\.onSizeChanged \{ formViewport = it\.height \}\s+\.onGloballyPositioned \{ checklistFormBounds = it\.boundsInWindow\(\) \}\s+\.verticalScroll\(checklistFormScroll, enabled = !checklistDragging\)/);
 // RN's Contexts and Tags inputs (TaskEditTokenField): one line with the keyboard's Done; Done leaves the field, and leaving it
 // shows core's tidy token list (draftValue), as RN's commitContextDraft / commitTagDraft on submit and on blur (TokenCommitTest).
 assert.match(editorUi, /keyboardOptions = if \(commit != null\) KeyboardOptions\(imeAction = ImeAction\.Done\) else KeyboardOptions\.Default,\s+keyboardActions = KeyboardActions\(onDone = \{ focusManager\.clearFocus\(\) \}\)/);
@@ -2457,7 +2458,7 @@ assert.deepEqual([.../val ATTACHMENT_COMMANDS = setOf\(([^)]*)\)/.exec(coreHost)
     assert.match(input, /else -> JSONObject\(\)\.put\("requestId", action\.id\)\.put\("action", JSONObject\(action\.title\)\)/, 'a list action is core\'s action with its request UUID');
 }
 assert.match(menuModel, /private fun send\(action: FailedAction\) = shell\.perform\(action\) \{ runtime ->\s+val reply = try \{\s+runtime\.menuCommand\(action\.kind, input\(action\)\)[\s\S]{0,2000}?shell\.acknowledged\(action\)/, 'menu writes run through perform with their exact FailedAction');
-assert.match(menuModel, /if \(refused && action\.kind == "focusSave"\) shell\.ui \{ focusControls\.refused\(action\) \}/, 'a refused saved filter frees its request UUID');
+assert.match(menuModel, /if \(refused && action\.kind == "focusSave"\) shell\.ui \{\s+if \(JSONObject\(action\.title\)\.optString\("view"\) == "contexts"\) \{[\s\S]{0,350}put\("requestId", UUID\.randomUUID\(\)\.toString\(\)\)[\s\S]{0,50}else focusControls\.refused\(action\)/, 'a refused Context or Focus saved filter frees its request UUID');
 assert.match(menuModel, /if \(refused && action\.kind == "calendarCreate"\) shell\.ui \{ calendar\.refused\(action\) \}/, 'a refused composer Save frees its request UUID');
 assert.equal(code(menuModel).match(/runtime\.menuCommand\(/g).length, 1, 'send is the one menu write');
 assert.equal(code(menuModel).match(/shell\.perform\(action\)/g).length, 1);
@@ -2774,7 +2775,7 @@ assert.match(model, /val sheet = runCatching \{ menu\.readSheet\(runtime\) \}\.g
     }
     // Every write is MenuModel's send -> perform(action) with its exact FailedAction: core's whole input (with the request UUID).
     assert.match(menuModel, /"bulkAction", "focusGroup", "focusSave", "focusCriterion", "focusDelete", "focusReorder" -> JSONObject\(action\.title\)\.put\("requestId", action\.id\)/);
-    assert.match(menuModel, /"bulkAction" -> bulkDone\(action, reply\)\s+"focusGroup", "focusSave", "focusCriterion", "focusDelete", "focusReorder" -> focusControls\.done\(action, reply\)/);
+    assert.match(menuModel, /"bulkAction" -> bulkDone\(action, reply\)\s+"focusGroup", "focusSave", "focusCriterion", "focusDelete", "focusReorder" -> \{\s+if \(action\.kind == "focusSave" && JSONObject\(action\.title\)\.optString\("view"\) == "contexts"\) \{[\s\S]{0,600}else focusControls\.done\(action, reply\)/);
     assert.match(menuModel, /fun bulkAction\(action: JSONObject, busy: String\) \{\s+bulkBusy = busy\s+act\("bulkAction", bulkPayload\(action\) \?: return\)/);
     assert.match(menuModel, /confirm\(bulk\.getJSONObject\("deleteConfirmation"\), bulkPayload\(JSONObject\(\)\.put\("type", "trashTasks"\)\) \?: return, "bulkAction"\)/, 'a bulk delete asks core\'s question first');
     assert.match(menuModel, /undo\?\.let \{ whenIdle \{ bulkBusy = "undo"; act\("bulkAction", JSONObject\(\)\.put\("list", list\)\.put\("action", it\.getJSONObject\("action"\)\)\) \} \}/, 'Undo is core\'s restoreTasks, a new request UUID');
@@ -2876,7 +2877,8 @@ assert.match(model, /val sheet = runCatching \{ menu\.readSheet\(runtime\) \}\.g
     // picker and its search), later windows go without it, and the page's bar is the view's.
     assert.match(menuModel, /first\.optJSONObject\("bulk"\)\?\.takeIf \{ list == "review" \}/);
     assert.match(menuModel, /JSONObject\(params\.toString\(\)\)\.apply \{\s+remove\("organize"\); remove\("picker"\)/, 'later windows go without the dialog\'s inputs');
-    for (const list of ['contexts', 'review']) assert.match(menuModel, new RegExp(`"${list}" -> kept\\([\\s\\S]{0,240}?\\.also \\{ dialogInputs\\(list, it\\) \\}`), `${list}'s read carries its open dialog`);
+    for (const list of ['review']) assert.match(menuModel, new RegExp(`"${list}" -> kept\\([\\s\\S]{0,240}?\\.also \\{ dialogInputs\\(list, it\\) \\}`), `${list}'s read carries its open dialog`);
+    assert.match(menuModel, /"contexts" -> kept\(listOf\("tokens", "matchMode", "searchQuery", "filters", "preservedCriteria", "savedFilterId"\)\)[\s\S]{0,120}\.also \{\s+if \(dialog\?\.optString\("kind"\) == "filters"\) it\.put\("filterSheetOpen", true\)\s+dialogInputs\(list, it\)\s+\}/, 'Contexts carries the filter sheet and its open dialog');
     assert.match(menuModel, /if \(list == "review"\) bulkEdit\?\.optJSONObject\("organizeEdit"\)\?\.let \{ params\.optJSONObject\("organize"\)\?\.put\("edit", it\) \}/);
     assert.match(organizeKt, /into\.put\("organize", JSONObject\(\)\.put\("draft", open\.optJSONObject\("draft"\) \?: JSONObject\(\)\)\)/);
     assert.match(bulkUi, /val bulk = page\?\.bulk\?\.takeIf \{ list in BULK_LISTS \} \?: return/, 'the lists\' bar never draws Review\'s');
@@ -3039,10 +3041,13 @@ assert.match(model, /val sheet = runCatching \{ menu\.readSheet\(runtime\) \}\.g
     assert(kinds.length >= 7);
     for (const kind of kinds) assert(checklistKinds.includes(kind), `${kind} is one of core's checklist edits`);
     assert.doesNotMatch(code(taskViewUi), /editChecklist\(JSONObject\(\)\.put\("kind", [^"]/, 'no checklist edit kind is built from a variable');
-    // A queued item edit names its item by its stable id (a move by its direction); its position is read only right before the edit is
-    // sent, from the checklist as the edits before it left it, and an edit whose item is gone is dropped. The screen never sends a position.
-    assert.doesNotMatch(code(taskViewUi), /put\("(index|from|to)"/, 'the checklist screens send no position');
-    assert.equal(code(taskViewUi).match(/put\("itemId", /g).length, 9, 'every item edit (the View and Form ticks and moves, each semantics and click; rename, Return, remove) names its item');
+    // Preview toggles retain ID resolution. Editor rows use session identity and positions so duplicate
+    // stored IDs remain distinct; a queued structural edit freezes stale positional callbacks.
+    assert.equal(code(taskViewUi).match(/put\("itemId", /g).length, 2, 'preview ticks retain ID-based resolution');
+    assert.match(editorUi, /if \(checklist != null && \(checklist\.has\("index"\) \|\| checklist\.has\("from"\)\) && checklistStructurePending\) return this/);
+    assert.match(editorUi, /"move", "remove", "insertAfter", "add", "append" -> true/);
+    assert.match(taskViewUi, /enabled = !locked && !editor\.checklistStructurePending/);
+    assert.equal(code(taskViewUi).match(/if \(model\.editor\?\.checklistStructurePending != true\)/g).length, 2, 'typing and IME submit both reject stale positions');
     // Audit 10-25 gap 4 (RN 9d3a7c87d): the View tab add box binds to the draft's checklistAdd, Save adds it before it saves, and a
     // refused edit goes through TaskEditor.refused (a refused append puts its text back).
     assert.match(taskViewUi, /val text = model\.editor\?\.checklistAdd\.orEmpty\(\)\n[\s\S]*?BasicTextField\(text, model::typeChecklistAdd,/,

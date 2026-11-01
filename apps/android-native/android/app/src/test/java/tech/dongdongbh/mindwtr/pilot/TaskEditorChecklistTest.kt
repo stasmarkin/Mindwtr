@@ -48,4 +48,36 @@ class TaskEditorChecklistTest {
 
         assertEquals(JSONArray(opened).toString(), JSONObject(reloaded.checklistSave).getJSONArray("base").toString())
     }
+    @Test fun lateInputAndImeSubmitCannotCrossAPendingPositionChange() {
+        val threeRows = """[{"id":"a","title":"A","isCompleted":false},{"id":"b","title":"B","isCompleted":false},{"id":"c","title":"C","isCompleted":false}]"""
+        val editor = TaskEditor.open(model(threeRows), "task")
+        val beforeMove = editor.queued(JSONObject().put("checklist", JSONObject().put("kind", "rename").put("index", 1).put("text", "Already typed")).toString(), "checklist:row-1")
+        val moving = beforeMove.queued(JSONObject().put("checklist", JSONObject().put("kind", "move").put("from", 0).put("to", 2)).toString(), null)
+        val lateRename = moving.queued(JSONObject().put("checklist", JSONObject().put("kind", "rename").put("index", 1).put("text", "B edited")).toString(), "checklist:row-2")
+        val lateSubmit = lateRename.queued(JSONObject().put("checklist", JSONObject().put("kind", "insertAfter").put("index", 1)).toString(), "checklist:row-2")
+        assertEquals(true, moving.checklistStructurePending)
+        assertEquals(moving, lateRename)
+        assertEquals(moving, lateSubmit)
+        assertEquals(listOf("rename", "move"), lateSubmit.pending.map { JSONObject(it.edit).getJSONObject("checklist").getString("kind") })
+        assertEquals("Already typed", JSONObject(lateSubmit.pending[0].edit).getJSONObject("checklist").getString("text"))
+    }
+
+    @Test fun everyRowShiftingEditBlocksStalePositionsWhileRapidTypingRemainsResponsive() {
+        val editor = TaskEditor.open(model(opened), "task")
+        val rename = JSONObject().put("checklist", JSONObject().put("kind", "rename").put("index", 0).put("text", "Typing")).toString()
+        val typing = editor.queued(rename, "checklist:row-1").queued(rename, "checklist:row-1")
+        assertEquals(2, typing.pending.size)
+        assertEquals(false, typing.checklistStructurePending)
+        for (kind in listOf("move", "remove", "insertAfter", "add", "append", "rename")) {
+            val operation = JSONObject().put("kind", kind).put("index", 0).put("from", 0).put("to", 1)
+                .put("text", "Pasted\nrow").put("title", "Append")
+            val pending = editor.queued(JSONObject().put("checklist", operation).toString(), null)
+            assertEquals(true, pending.checklistStructurePending)
+            assertEquals(pending, pending.queued(rename, "checklist:row-1"))
+            val settled = pending.refused(pending.pending.first())
+            assertEquals(false, settled.checklistStructurePending)
+            assertEquals(1, settled.queued(rename, "checklist:row-1").pending.size)
+        }
+    }
+
 }

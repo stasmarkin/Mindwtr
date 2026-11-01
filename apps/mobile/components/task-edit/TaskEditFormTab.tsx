@@ -27,6 +27,7 @@ import { FieldHeading } from './FieldHeading';
 import type { CopilotPart } from './use-task-edit-copilot';
 import { SomedaySectionPicker } from '../someday-section-picker';
 import { FocusStarIcon } from '../FocusStarIcon';
+import { ChecklistDragScrollContext, type ChecklistDragScroll } from './use-checklist-handle-drag';
 
 type TaskEditFormTabProps = {
     t: (key: string) => string;
@@ -132,6 +133,29 @@ function TaskEditFormTabComponent({
     const [titleFocused, setTitleFocused] = React.useState(false);
     const formScrollRef = React.useRef<ScrollView | null>(null);
     const formScrollOffsetRef = React.useRef(0);
+    const [checklistDragging, setChecklistDragging] = React.useState(false);
+    const formViewportRef = React.useRef({ top: 0, bottom: 0 });
+    const formContentHeightRef = React.useRef(0);
+    const measureDragViewport = React.useCallback(() => {
+        const handle = findNodeHandle(formScrollRef.current);
+        if (handle == null) return;
+        UIManager.measureInWindow(handle, (_x, y, _width, height) => {
+            formViewportRef.current = { top: y, bottom: y + height };
+        });
+    }, []);
+    const checklistDragScroll = React.useMemo<ChecklistDragScroll>(() => ({
+        begin: () => { measureDragViewport(); setChecklistDragging(true); },
+        end: () => setChecklistDragging(false),
+        offset: () => formScrollOffsetRef.current,
+        viewport: () => formViewportRef.current,
+        scrollBy: (delta) => {
+            const viewport = formViewportRef.current;
+            const maximum = Math.max(0, formContentHeightRef.current - (viewport.bottom - viewport.top));
+            const y = Math.max(0, Math.min(maximum, formScrollOffsetRef.current + delta));
+            formScrollOffsetRef.current = y;
+            formScrollRef.current?.scrollTo({ y, animated: false });
+        },
+    }), [measureDragViewport]);
     const keyboardTopRef = React.useRef(Dimensions.get('window').height);
     const keyboardVisibleRef = React.useRef(false);
     // Android focuses before `keyboardDidShow`, so a focus scroll requested with no
@@ -343,7 +367,9 @@ function TaskEditFormTabComponent({
                     ]}
                     keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'none'}
                     keyboardShouldPersistTaps="handled"
-                    scrollEnabled={!suspendKeyboardHandling}
+                    scrollEnabled={!suspendKeyboardHandling && !checklistDragging}
+                    onLayout={measureDragViewport}
+                    onContentSizeChange={(_width, height) => { formContentHeightRef.current = height; }}
                     {...androidScrollViewFocusProps}
                     onScroll={(event) => {
                         formScrollOffsetRef.current = event.nativeEvent.contentOffset.y;
@@ -351,6 +377,7 @@ function TaskEditFormTabComponent({
                     scrollEventThrottle={16}
                     nestedScrollEnabled
                 >
+                    <ChecklistDragScrollContext.Provider value={checklistDragScroll}>
                         <View style={styles.formGroup}>
                             <View style={styles.labelRow}>
                                 <FieldHeading
@@ -581,6 +608,7 @@ function TaskEditFormTabComponent({
                             />
                         </View>
                     )}
+                    </ChecklistDragScrollContext.Provider>
                 </ScrollView>
             </KeyboardAvoidingView>
         </View>

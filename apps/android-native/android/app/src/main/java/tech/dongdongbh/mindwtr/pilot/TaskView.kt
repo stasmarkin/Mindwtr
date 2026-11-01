@@ -2,6 +2,24 @@ package tech.dongdongbh.mindwtr.pilot
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import kotlinx.coroutines.delay
+import android.util.Log
+import tech.dongdongbh.mindwtr.pilot.core.CoreHost
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -351,6 +369,47 @@ fun ChecklistField(model: InboxViewModel, editor: TaskEditor, locked: Boolean) =
     val labels = field.getJSONObject("labels")
     var ordering by rememberSaveable(editor.id) { mutableStateOf(false) }
     val reorder = field.getBoolean("canReorder")
+    val session = remember(editor.session) { ChecklistRowSession(editor.session) }
+    if (!editsPending) session.settle(field.menuObjects("items"), error == null)
+    val rows = session.sync(field.menuObjects("items"))
+    val frames = remember(editor.session) { mutableStateMapOf<String, Rect>() }
+    val scroll = LocalChecklistFormScroll.current
+    val latestScroll by rememberUpdatedState(scroll)
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    val edge = with(LocalDensity.current) { 72.dp.toPx() }
+    var dragRow by remember(editor.session) { mutableStateOf<String?>(null) }
+    var dragTarget by remember(editor.session) { mutableStateOf<String?>(null) }
+    var dragPointer by remember(editor.session) { mutableFloatStateOf(0f) }
+    var actionRow by remember(editor.session) { mutableStateOf<String?>(null) }
+    val structuralEnabled = !locked && !editsPending && dragRow == null
+    fun dropIndex(): Int? {
+        if (rows.any { frames[it.identity] == null }) return null
+        return checklistDropIndex(rows.map { frames.getValue(it.identity).center.y }, dragPointer)
+    }
+    fun finishDrag(commit: Boolean) {
+        val from = rows.indexOfFirst { it.identity == dragRow }
+        val to = dropIndex()
+        dragRow = null
+        dragTarget = null
+        scroll?.dragging?.invoke(false)
+        if (commit && !locked && !editsPending && from >= 0 && to != null && from != to) {
+            session.expectMove(from, to)
+            editChecklist(JSONObject().put("kind", "move").put("from", from).put("to", to))
+            Log.i(CoreHost.TAG, "Checklist handle drag submitted releaseCheck=v1.3.8/checklist-handle-drag")
+        }
+    }
+    LaunchedEffect(dragRow) {
+        if (dragRow == null) return@LaunchedEffect
+        while (dragRow != null) {
+            latestScroll?.let { adapter ->
+                adapter.state.scrollBy(checklistEdgeScroll(dragPointer, adapter.viewport.top, adapter.viewport.bottom, edge))
+            }
+            dragTarget = dropIndex()?.let { rows[it].identity }
+            delay(16)
+        }
+    }
+    DisposableEffect(editor.session) { onDispose { scroll?.dragging?.invoke(false) } }
     Column(Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
         Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Lucide.ListChecks, null, tint = c.secondaryText, modifier = Modifier.size(16.dp))
@@ -359,8 +418,8 @@ fun ChecklistField(model: InboxViewModel, editor: TaskEditor, locked: Boolean) =
                 val label = labels.getString(if (ordering) "done" else "reorder")
                 val shape = RoundedCornerShape(8.dp)
                 Box(Modifier.heightIn(min = 36.dp).clip(shape).background(c.filterBg).rnBorder(1.dp, c.border, shape)
-                    .clearAndSetSemantics { contentDescription = label; role = Role.Button; onClick { ordering = !ordering; true } }
-                    .clickable { ordering = !ordering }.padding(horizontal = 12.dp),
+                    .clearAndSetSemantics { contentDescription = label; role = Role.Button; if (structuralEnabled) onClick { ordering = !ordering; true } else disabled() }
+                    .clickable(enabled = structuralEnabled) { ordering = !ordering }.padding(horizontal = 12.dp),
                     contentAlignment = Alignment.Center) { Text(label, style = rnText(12, 700), color = c.tint) }
             }
         }
@@ -371,33 +430,71 @@ fun ChecklistField(model: InboxViewModel, editor: TaskEditor, locked: Boolean) =
         }
         val shape = RoundedCornerShape(10.dp)
         Column(Modifier.fillMaxWidth().clip(shape).background(c.cardBg).rnBorder(1.dp, c.border, shape).padding(8.dp)) {
-            val items = field.menuObjects("items")
-            if (ordering && reorder) {
-                for (item in items) Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).rnBorderBottom(c.border).padding(horizontal = 4.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(item.getString("orderTitle"), style = rnText(16, 500), color = if (item.getBoolean("struck")) c.secondaryText else c.text, maxLines = 1,
-                        modifier = Modifier.weight(1f))
-                    val id = item.getString("id")
-                    for ((up, icon) in listOf(true to SettingsIonicons.ChevronUp, false to SettingsIonicons.ChevronDown)) {
-                        val can = item.getBoolean(if (up) "canMoveUp" else "canMoveDown") && !locked
-                        val label = item.getString(if (up) "moveUpLabel" else "moveDownLabel")
-                        val box = RoundedCornerShape(8.dp)
-                        Box(Modifier.fade(if (can) 1f else 0.35f).size(36.dp).clip(box).background(c.filterBg).rnBorder(1.dp, c.border, box)
-                            .clearAndSetSemantics { contentDescription = label; role = Role.Button
-                                if (can) onClick { editChecklist(JSONObject().put("kind", "move").put("itemId", id).put("step", if (up) -1 else 1)); true } else disabled() }
-                            .clickable(enabled = can) { editChecklist(JSONObject().put("kind", "move").put("itemId", id).put("step", if (up) -1 else 1)) }, contentAlignment = Alignment.Center) {
-                            Icon(icon, null, tint = if (can) c.tint else c.secondaryText, modifier = Modifier.size(18.dp))
+            for (row in rows) key(row.identity) {
+                val item = row.item
+                val index = item.getInt("index")
+                Column(Modifier.fillMaxWidth().onGloballyPositioned { frames[row.identity] = it.boundsInWindow() }
+                    .fade(if (dragRow == row.identity) 0.6f else 1f)
+                    .background(if (dragTarget == row.identity) c.filterBg else c.cardBg)) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Box {
+                            var handleTop by remember(row.identity) { mutableFloatStateOf(0f) }
+                            Box(Modifier.size(44.dp).onGloballyPositioned { handleTop = it.boundsInWindow().top }
+                                .semantics { contentDescription = labels.getString("drag"); role = Role.Button }
+                                .testTag("checklist-drag-$index")
+                                .pointerInput(row.identity, !locked && !editsPending) {
+                                    if (!locked && !editsPending && rows.size > 1) detectDragGestures(
+                                        onDragStart = { offset ->
+                                            focusManager.clearFocus(); keyboard?.hide(); actionRow = null
+                                            dragPointer = handleTop + offset.y; dragRow = row.identity
+                                            scroll?.dragging?.invoke(true)
+                                        },
+                                        onDragEnd = { finishDrag(true) }, onDragCancel = { finishDrag(false) },
+                                        onDrag = { change, amount -> change.consume(); dragPointer += amount.y })
+                                }
+                                .clickable(enabled = structuralEnabled) { actionRow = row.identity }, contentAlignment = Alignment.Center) {
+                                Text("≡", style = rnText(22, 400), color = c.secondaryText)
+                            }
+                            DropdownMenu(expanded = actionRow == row.identity, onDismissRequest = { actionRow = null }) {
+                                fun move(to: Int) {
+                                    actionRow = null; focusManager.clearFocus(); session.expectMove(index, to)
+                                    editChecklist(JSONObject().put("kind", "move").put("from", index).put("to", to))
+                                }
+                                DropdownMenuItem(text = { Text(t("projects.moveUp")) }, enabled = structuralEnabled && index > 0, onClick = { move(index - 1) })
+                                DropdownMenuItem(text = { Text(t("projects.moveDown")) }, enabled = structuralEnabled && index < rows.lastIndex, onClick = { move(index + 1) })
+                                DropdownMenuItem(text = { Text(labels.getString("moveTop")) }, enabled = structuralEnabled && index > 0, onClick = { move(0) })
+                                DropdownMenuItem(text = { Text(labels.getString("moveBottom")) }, enabled = structuralEnabled && index < rows.lastIndex, onClick = { move(rows.lastIndex) })
+                                DropdownMenuItem(text = { Text(labels.getString("addBelow")) }, enabled = structuralEnabled && item.getString("title").isNotBlank(), onClick = {
+                                    actionRow = null; focusManager.clearFocus()
+                                    editChecklist(JSONObject().put("kind", "insertAfter").put("index", index))
+                                })
+                            }
+                        }
+                        Box(Modifier.weight(1f)) {
+                            if (ordering && reorder) Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).rnBorderBottom(c.border), verticalAlignment = Alignment.CenterVertically) {
+                                Text(item.getString("orderTitle"), style = rnText(16, 500), color = c.text, maxLines = 1, modifier = Modifier.weight(1f))
+                                for ((up, icon) in listOf(true to SettingsIonicons.ChevronUp, false to SettingsIonicons.ChevronDown)) {
+                                    val to = index + if (up) -1 else 1
+                                    val can = structuralEnabled && to in rows.indices
+                                    val moveLabel = if (up) item.getString("moveUpLabel") else item.getString("moveDownLabel")
+                                    Box(Modifier.size(44.dp).semantics { contentDescription = moveLabel }
+                                        .clickable(enabled = can) {
+                                            session.expectMove(index, to)
+                                            editChecklist(JSONObject().put("kind", "move").put("from", index).put("to", to))
+                                        }, contentAlignment = Alignment.Center) { Icon(icon, null, tint = if (can) c.tint else c.secondaryText, modifier = Modifier.size(18.dp)) }
+                                }
+                            } else ChecklistItemRow(model, editor, field, item, locked || dragRow != null, row.identity) { session.expectRemove(index) }
                         }
                     }
                 }
-            } else {
-                for (item in items) key(item.getString("id")) { ChecklistItemRow(model, editor, field, item, locked) }
+            }
+            if (!ordering || !reorder) {
                 val addLabel = labels.getString("add")
                 val addItem = { editChecklist(JSONObject().put("kind", "add")) }
                 val add = RoundedCornerShape(8.dp)
                 Row(Modifier.padding(top = 6.dp).fillMaxWidth().clip(add).background(c.cardBg).rnBorder(1.dp, c.border, add)
-                    .clearAndSetSemantics { contentDescription = addLabel; role = Role.Button; testTag = "checklist-add-item"; if (!locked) onClick { addItem(); true } else disabled() }
-                    .clickable(enabled = !locked) { addItem() }
+                    .clearAndSetSemantics { contentDescription = addLabel; role = Role.Button; testTag = "checklist-add-item"; if (structuralEnabled) onClick { addItem(); true } else disabled() }
+                    .clickable(enabled = structuralEnabled) { addItem() }
                     .padding(vertical = 9.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
                     Icon(Lucide.PlusPlain, null, tint = c.tint, modifier = Modifier.size(14.dp))
                     Text(addLabel, style = rnText(12, 700), color = c.tint, modifier = Modifier.padding(start = 5.dp))
@@ -424,18 +521,20 @@ fun ChecklistField(model: InboxViewModel, editor: TaskEditor, locked: Boolean) =
  * edit from this input waits for core, so an older reply never resets newer typing.
  */
 @Composable
-private fun ChecklistItemRow(model: InboxViewModel, editor: TaskEditor, field: JSONObject, item: JSONObject, locked: Boolean) = with(model) {
+private fun ChecklistItemRow(model: InboxViewModel, editor: TaskEditor, field: JSONObject, item: JSONObject, locked: Boolean, identity: String, beforeRemove: () -> Unit) = with(model) {
     val c = LocalTheme.current.colors
     val id = item.getString("id")
     val title = item.getString("title")
-    val typed = "checklist:$id"
+    val index = item.getInt("index")
+    val typed = "checklist:$identity"
+    val structuralLocked = locked || editsPending
     val pending = editor.pendingFor(typed)
     // The field keeps its own cursor (TextFieldValue). While it has focus the typing wins: a reply to an earlier keystroke reset
     // the text mid-typing, and letters landed out of order or were lost (S23 runs 52 and 54). Core's title is taken when the
     // field is not being typed in and differs from what this field last sent (a rename core changed, a reset).
-    var input by remember(id) { mutableStateOf(TextFieldValue(title, TextRange(title.length))) }
-    var sent by remember(id) { mutableStateOf(title) }
-    var typing by remember(id) { mutableStateOf(false) }
+    var input by remember(identity) { mutableStateOf(TextFieldValue(title, TextRange(title.length))) }
+    var sent by remember(identity) { mutableStateOf(title) }
+    var typing by remember(identity) { mutableStateOf(false) }
     LaunchedEffect(title, typing) { if (!typing && !pending && title != sent) { input = TextFieldValue(title, TextRange(title.length)); sent = title } }
     val text = input.text
     val focus = remember { FocusRequester() }
@@ -446,8 +545,8 @@ private fun ChecklistItemRow(model: InboxViewModel, editor: TaskEditor, field: J
         val label = item.getString("checkboxLabel")
         Box(Modifier.size(44.dp).clearAndSetSemantics {
             contentDescription = label; role = Role.Checkbox; toggleableState = ToggleableState(done)
-            if (!locked) onClick { editChecklist(JSONObject().put("kind", "toggle").put("itemId", id)); true } else disabled()
-        }.clickable(enabled = !locked) { editChecklist(JSONObject().put("kind", "toggle").put("itemId", id)) }, contentAlignment = Alignment.Center) {
+            if (!structuralLocked) onClick { editChecklist(JSONObject().put("kind", "toggle").put("index", index)); true } else disabled()
+        }.clickable(enabled = !structuralLocked) { editChecklist(JSONObject().put("kind", "toggle").put("index", index)) }, contentAlignment = Alignment.Center) {
             val box = RoundedCornerShape(6.dp)
             Box(Modifier.size(28.dp).clip(box).rnBorder(2.dp, c.tint, box).background(if (done) c.tint else c.cardBg), contentAlignment = Alignment.Center) {
                 if (done) Icon(Lucide.CheckBold, null, tint = c.onTint, modifier = Modifier.size(12.dp))
@@ -456,19 +555,23 @@ private fun ChecklistItemRow(model: InboxViewModel, editor: TaskEditor, field: J
         val inputLabel = item.getString("inputLabel")
         val placeholder = field.getJSONObject("labels").getString("placeholder")
         BasicTextField(input, { next ->
-            val changed = next.text != input.text
-            input = next
-            if (changed) { sent = next.text; editChecklist(JSONObject().put("kind", "rename").put("itemId", id).put("text", next.text), typed) }
-        }, enabled = !locked, singleLine = true, cursorBrush = SolidColor(c.tint),
+            if (model.editor?.checklistStructurePending != true) {
+                val changed = next.text != input.text
+                input = next
+                if (changed) { sent = next.text; editChecklist(JSONObject().put("kind", "rename").put("index", index).put("text", next.text), typed) }
+            }
+        }, enabled = !locked && !editor.checklistStructurePending, singleLine = true, cursorBrush = SolidColor(c.tint),
             textStyle = rnText(16, 400).copy(color = if (struck) c.secondaryText else c.text, textDecoration = if (struck) TextDecoration.LineThrough else null),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-            keyboardActions = KeyboardActions(onNext = { editChecklist(JSONObject().put("kind", "insertAfter").put("itemId", id).put("text", text), typed) }),
+            keyboardActions = KeyboardActions(onNext = {
+                if (model.editor?.checklistStructurePending != true) editChecklist(JSONObject().put("kind", "insertAfter").put("index", index).put("text", text), typed)
+            }),
             modifier = Modifier.weight(1f).focusRequester(focus).onFocusChanged { typing = it.isFocused }.semantics { contentDescription = inputLabel }.testTag("checklist-item-input"),
             decorationBox = { inner -> Box { if (text.isEmpty()) Text(placeholder, style = rnText(16, 400), color = c.secondaryText); inner() } })
         val remove = "${t("common.delete")}: ${item.getString("orderTitle")}"
-        val drop = { editChecklist(JSONObject().put("kind", "remove").put("itemId", id)) }
-        Box(Modifier.size(44.dp).clearAndSetSemantics { contentDescription = remove; role = Role.Button; if (!locked) onClick { drop(); true } else disabled() }
-            .clickable(enabled = !locked) { drop() }, contentAlignment = Alignment.Center) {
+        val drop = { beforeRemove(); editChecklist(JSONObject().put("kind", "remove").put("index", index)) }
+        Box(Modifier.size(44.dp).clearAndSetSemantics { contentDescription = remove; role = Role.Button; if (!structuralLocked) onClick { drop(); true } else disabled() }
+            .clickable(enabled = !structuralLocked) { drop() }, contentAlignment = Alignment.Center) {
             Text("×", style = rnText(20, 300), color = c.secondaryText)
         }
     }
