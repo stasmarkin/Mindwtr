@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render } from '@testing-library/react';
+import { act, fireEvent, render, waitFor } from '@testing-library/react';
 import type { ComponentProps } from 'react';
 import type { Area, Project, Task } from '@mindwtr/core';
 import { configureDateFormatting, formatTimeEstimateLabel, getDateFormattingConfig, getTaskAgeLabel, hasTimeComponent, safeFormatDate, useTaskStore } from '@mindwtr/core';
@@ -503,8 +503,8 @@ describe('TaskItemDisplay', () => {
 
     // #1164: Waiting For completes from the quick action; Someday still promotes.
     it.each([
-        ['waiting', 'Done', 'done', 'Next'],
-        ['someday', 'Next', 'next', 'Done'],
+        ['waiting', 'Mark Done', 'done', 'Next'],
+        ['someday', 'Next', 'next', 'Mark Done'],
     ] as const)('quick action on a %s task offers %s', (status, buttonName, expectedStatus, absentButton) => {
         const onStatusChange = vi.fn();
         const { getByRole, queryByRole, unmount } = render(
@@ -533,6 +533,7 @@ describe('TaskItemDisplay', () => {
                     t={(key: string) => ({
                         'status.next': 'Next',
                         'status.done': 'Done',
+                        'review.markDone': 'Mark Done',
                     }[key] ?? key)}
                 />
             </LanguageProvider>
@@ -544,6 +545,50 @@ describe('TaskItemDisplay', () => {
         expect(onStatusChange).toHaveBeenCalledWith(expectedStatus);
         expect(queryByRole('button', { name: absentButton })).not.toBeInTheDocument();
         unmount();
+    });
+
+    it('copies the canonical task link without opening or selecting the row', async () => {
+        const writeText = vi.fn().mockResolvedValue(undefined);
+        vi.stubGlobal('navigator', { clipboard: { writeText } });
+        const onRowClick = vi.fn();
+        const onToggleView = vi.fn();
+        const onToggleSelect = vi.fn();
+        const onEdit = vi.fn();
+        const { getByRole } = render(<div onClick={onRowClick}>
+            <LanguageProvider><TaskItemDisplay
+                task={{ ...baseTask, id: 'task /?&' }} language="en" selectionMode={false} isViewOpen={false}
+                actions={{ onToggleView, onToggleSelect, onEdit, onDelete: vi.fn(),
+                    onDuplicate: vi.fn(), onStatusChange: vi.fn(), openAttachment: vi.fn() }}
+                visibleAttachments={[]} recurrenceRule="" recurrenceStrategy="strict"
+                prioritiesEnabled={false} timeEstimatesEnabled={false} isStagnant={false}
+                showQuickDone readOnly={false} t={(key) => key}
+            /></LanguageProvider>
+        </div>);
+        const copyLink = getByRole('button', { name: 'Copy task link' });
+        copyLink.focus();
+        expect(copyLink).toHaveFocus();
+        fireEvent.pointerDown(copyLink);
+        fireEvent.click(copyLink, { detail: 0 });
+        await waitFor(() => expect(writeText).toHaveBeenCalledExactlyOnceWith('mindwtr://open?task=task%20%2F%3F%26'));
+        expect(onRowClick).not.toHaveBeenCalled();
+        expect(onToggleSelect).not.toHaveBeenCalled();
+        expect(onToggleView).not.toHaveBeenCalled();
+        expect(onEdit).not.toHaveBeenCalled();
+    });
+
+    it('keeps a completed quick-control slot visibly checked without completing again', () => {
+        const onStatusChange = vi.fn();
+        const { getByRole, queryByRole } = render(<LanguageProvider><TaskItemDisplay
+            task={{ ...baseTask, status: 'done' }} language="en" selectionMode={false} isViewOpen={false}
+            actions={{ onToggleView: vi.fn(), onEdit: vi.fn(), onDelete: vi.fn(),
+                onDuplicate: vi.fn(), onStatusChange, openAttachment: vi.fn() }}
+            visibleAttachments={[]} recurrenceRule="" recurrenceStrategy="strict"
+            prioritiesEnabled={false} timeEstimatesEnabled={false} isStagnant={false}
+            showQuickDone readOnly t={(key) => key}
+        /></LanguageProvider>);
+        expect(getByRole('img', { name: 'status.done' })).toBeInTheDocument();
+        expect(queryByRole('button', { name: 'Mark Done' })).not.toBeInTheDocument();
+        expect(onStatusChange).not.toHaveBeenCalled();
     });
 
     // #1155: the row status menu listed Reference only for a task that already

@@ -1735,6 +1735,7 @@ export const TaskItem = memo(function TaskItem({
                 onDragStart={handleCalendarDragStart}
                 onClickCapture={onSelect ? (event) => {
                     if (!event.currentTarget.contains(event.target as Node)) return;
+                    if (event.target instanceof Element && event.target.closest('[data-task-copy-link]')) return;
                     if (onToggleSelect && !interactionDisabled && !event.altKey
                         && (event.shiftKey || (IS_MAC_PLATFORM ? event.metaKey : event.ctrlKey))) return;
                     onSelect?.();

@@ -1,6 +1,6 @@
 import React from 'react';
 import { View } from 'react-native';
-import { ArrowRight, CalendarDays, Check, FolderOpen, RotateCcw, Star, Trash2, type LucideIcon } from 'lucide-react-native';
+import { ArrowRight, CalendarDays, Circle, FolderOpen, RotateCcw, Star, Trash2, type LucideIcon } from 'lucide-react-native';
 import { formatI18nTemplate, tFallback, type TaskRowSwipeAction, type TaskRowSwipeActionId } from '@mindwtr/core';
 
 import { AppPressable } from '../app-pressable';
@@ -10,7 +10,7 @@ import type { StatusPalette } from '../../hooks/use-status-colors';
 import { styles } from './swipeable-task-item.styles';
 
 const ICONS: Record<TaskRowSwipeActionId, LucideIcon> = {
-    done: Check,
+    done: Circle,
     focus: Star,
     organize: FolderOpen,
     dates: CalendarDays,

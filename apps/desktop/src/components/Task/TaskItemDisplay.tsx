@@ -1,4 +1,4 @@
-import { AlertTriangle, AlignLeft, Folder, Calendar as CalendarIcon, Tag, Trash2, ArrowRight, Repeat, Check, Clock, Timer, Link2, ListChecks, Paperclip, RotateCcw, Copy, MapPin, History, Hourglass, Play, Zap, MoreHorizontal, XCircle } from 'lucide-react';
+import { AlertTriangle, AlignLeft, Folder, Calendar as CalendarIcon, Tag, Trash2, ArrowRight, Repeat, Check, Circle, CheckCircle2, Clock, Timer, Link2, ListChecks, Paperclip, RotateCcw, Copy, MapPin, History, Hourglass, Play, Zap, MoreHorizontal, XCircle } from 'lucide-react';
 import type { Area, Attachment, Project, RangeSelectionOptions, Section, Task, TaskStatus, RecurrenceRule, RecurrenceStrategy, Language } from '@mindwtr/core';
 import { DEFAULT_AREA_COLOR, TASK_PRIORITY_COLORS, formatRecurrenceLabel, formatTimeEstimateLabel, formatTimeSpentLabel, getChecklistProgress, getContextColor, getInlineMarkdownPreview, getRecurringTaskPreviewDate, getTaskAgeLabel, getTaskDateCoherenceIssues, getTaskStaleness, getTaskUrgency, hasTimeComponent, isTaskActionable, isTaskCancelled, isTaskCompleted, isTaskFinished, safeFormatDate, resolveTaskTextDirection, tFallback } from '@mindwtr/core';
 import { cn } from '../../lib/utils';
@@ -16,6 +16,7 @@ import { AttachmentImage } from './AttachmentImage';
 import { FocusStarIcon } from '../FocusStarIcon';
 import { ToolbarSelect } from '../views/list/ToolbarSelect';
 import { useTaskDisplayClock } from '../../hooks/useTaskDisplayClock';
+import { copyTaskReference } from '../../lib/task-clipboard';
 
 interface TaskItemDisplayActions {
     onToggleSelect?: (options?: RangeSelectionOptions) => void;
@@ -439,6 +440,7 @@ export const TaskItemDisplay = memo(function TaskItemDisplay({
         && !selectionMode
         && !readOnly
         && isTaskActionable(task);
+    const showCompletedIndicator = showQuickDone && taskIsCompleted && !selectionMode;
     const canEditCompletedAt = Boolean(taskIsCompleted && completionLabel && onEditCompletedAt)
         && !selectionMode
         && !interactionDisabled;
@@ -669,8 +671,8 @@ export const TaskItemDisplay = memo(function TaskItemDisplay({
         && task.status === 'next'
         && !focusToggle?.alwaysVisible;
     const overlayDragHandle = actionsOverlay && !!dragHandle;
-    const overlayQuickDone = actionsOverlay && showQuickDoneButton;
-    const inlineLeftControls = !actionsOverlay && (showQuickDoneButton || dragHandle);
+    const overlayQuickDone = actionsOverlay && (showQuickDoneButton || showCompletedIndicator);
+    const inlineLeftControls = !actionsOverlay && (showQuickDoneButton || showCompletedIndicator || dragHandle);
     const showActionTags = !isReference && !actionsOverlay && !isViewOpen && task.tags.length > 0;
 
     // Someday tasks promote to Next instead of completing — the natural
@@ -697,20 +699,19 @@ export const TaskItemDisplay = memo(function TaskItemDisplay({
                 : canBackdateComplete
                     ? tFallback(t, 'task.completeBackdateHint', 'Right-click to complete with a different time')
                     : undefined}
-            aria-label={quickActionIsPromote ? t('status.next') : t('status.done')}
-            // Inbox rows used to hide this check until hover ("not a checklist"),
-            // but in mixed-status lists like Review the reserved blank slot read
-            // as a missing icon — and touch devices always showed it anyway.
-            // One consistent at-rest affordance everywhere now.
+            aria-label={quickActionIsPromote ? t('status.next') : tFallback(t, 'review.markDone', 'Mark Done')}
             className={cn(
                 quickActionIsPromote
                     ? "text-info hover:text-info/80 p-1 rounded hover:bg-info/20"
-                    : "text-success hover:text-success/80 p-1 rounded hover:bg-success/20",
+                    : "text-muted-foreground hover:text-foreground p-0.5 rounded-full hover:bg-muted/50 focus:outline-none focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40",
             )}
         >
-            {quickActionIsPromote ? <ArrowRight className="w-4 h-4" /> : <Check className="w-4 h-4" />}
+            {quickActionIsPromote ? <ArrowRight className="w-4 h-4" /> : <Circle className="w-5 h-5" strokeWidth={1.5} />}
         </button>
     );
+    const completionControl = showCompletedIndicator
+        ? <span className="p-0.5 text-success" role="img" aria-label={t('status.done')}><CheckCircle2 className="w-5 h-5" /></span>
+        : quickDoneButton;
 
     return (
         // `isolate` keeps the row's internal z-10/z-20 layers (overlays, the
@@ -744,7 +745,7 @@ export const TaskItemDisplay = memo(function TaskItemDisplay({
                     className="absolute left-4 top-2 flex items-center z-10"
                     onPointerDown={(event) => event.stopPropagation()}
                 >
-                    {quickDoneButton}
+                    {completionControl}
                 </div>
             )}
             <div className={cn("task-item-display__main flex min-w-0 flex-1 items-start gap-2")}>
@@ -756,7 +757,7 @@ export const TaskItemDisplay = memo(function TaskItemDisplay({
                         )}
                     >
                         {dragHandle}
-                        {showQuickDoneButton && quickDoneButton}
+                        {(showQuickDoneButton || showCompletedIndicator) && completionControl}
                     </div>
                 )}
                 <div
@@ -842,7 +843,7 @@ export const TaskItemDisplay = memo(function TaskItemDisplay({
                                 "task-item-display__title font-semibold whitespace-normal break-words text-foreground group-hover/content:text-primary transition-colors",
                                 dense ? "text-sm" : "text-base",
                                 taskIsCompleted && "line-through text-muted-foreground",
-                                actionsOverlay && "pr-20",
+                                actionsOverlay && "pr-28",
                                 (overlayDragHandle || overlayQuickDone) && "pl-12"
                             )}
                         >
@@ -1132,6 +1133,21 @@ export const TaskItemDisplay = memo(function TaskItemDisplay({
                             <FocusStarIcon className="w-4 h-4" filled={focusToggle.isFocused} />
                         </button>
                     )}
+                    <button
+                        type="button"
+                        data-task-copy-link
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            void copyTaskReference(task.id, 'link', t, {
+                                isTrusted: event.nativeEvent.isTrusted, detail: event.nativeEvent.detail,
+                            });
+                        }}
+                        aria-label={tFallback(t, 'task.copyTaskLink', 'Copy task link')}
+                        title={tFallback(t, 'task.copyTaskLink', 'Copy task link')}
+                        className="opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-muted-foreground hover:text-foreground p-1 rounded hover:bg-muted/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                    >
+                        <Link2 className="w-4 h-4" />
+                    </button>
                     {/*
                       * A read-only row's menu holds only Duplicate and Delete, and both
                       * are buttons right here — "More options" with nothing more in it is

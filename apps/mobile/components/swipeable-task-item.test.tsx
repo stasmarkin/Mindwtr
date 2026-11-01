@@ -217,6 +217,7 @@ vi.mock('lucide-react-native', () => ({
   ArrowRight: (props: any) => React.createElement('ArrowRight', props),
   CalendarDays: (props: any) => React.createElement('CalendarDays', props),
   Check: (props: any) => React.createElement('Check', props),
+  Circle: (props: Record<string, unknown>) => React.createElement('Circle', props),
   CircleDot: (props: any) => React.createElement('CircleDot', props),
   FolderOpen: (props: any) => React.createElement('FolderOpen', props),
   History: (props: any) => React.createElement('History', props),

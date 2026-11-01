@@ -64,6 +64,27 @@ describe('TaskItem', () => {
         expect(getByText('Test Task')).toBeInTheDocument();
     });
 
+    it('copies a task link by pointer or keyboard without selecting or opening the row', async () => {
+        const user = userEvent.setup();
+        const write = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
+        const onSelect = vi.fn();
+        const onToggleSelect = vi.fn();
+        const { getByRole } = render(<LanguageProvider>
+            <TaskItem task={mockTask} onSelect={onSelect} onToggleSelect={onToggleSelect} />
+        </LanguageProvider>);
+        const copy = getByRole('button', { name: 'Copy task link' });
+        await user.click(copy);
+        copy.focus();
+        await user.keyboard('{Enter}');
+        await user.keyboard(' ');
+        expect(write).toHaveBeenCalledTimes(3);
+        expect(write).toHaveBeenLastCalledWith('mindwtr://open?task=1');
+        expect(onSelect).not.toHaveBeenCalled();
+        expect(onToggleSelect).not.toHaveBeenCalled();
+        expect(useUiStore.getState().editingTaskId).toBeNull();
+        expect(useUiStore.getState().expandedTaskIds[mockTask.id]).not.toBe(true);
+    });
+
     it('shows the task section alongside its project metadata', () => {
         const project: Project = {
             id: 'project-launch',
@@ -589,7 +610,7 @@ describe('TaskItem', () => {
             </LanguageProvider>
         );
 
-        fireEvent.contextMenu(getAllByRole('button', { name: 'Done' })[0]);
+        fireEvent.contextMenu(getAllByRole('button', { name: 'Mark Done' })[0]);
         const dialog = getByRole('dialog', { name: 'Completion time' });
         setCompletionDateTime(dialog, '2026-07-20T09:30');
         fireEvent.change(within(dialog).getByLabelText('Time Spent'), { target: { value: '45' } });
@@ -635,7 +656,7 @@ describe('TaskItem', () => {
             </LanguageProvider>
         );
 
-        fireEvent.contextMenu(getAllByRole('button', { name: 'Done' })[0]);
+        fireEvent.contextMenu(getAllByRole('button', { name: 'Mark Done' })[0]);
         const dialog = getByRole('dialog', { name: 'Completion time' });
         expect(within(dialog).queryByLabelText('Time Spent')).toBeNull();
         setCompletionDateTime(dialog, '2026-07-20T09:30');
@@ -684,7 +705,7 @@ describe('TaskItem', () => {
             </LanguageProvider>
         );
 
-        fireEvent.contextMenu(getAllByRole('button', { name: 'Done' })[0]);
+        fireEvent.contextMenu(getAllByRole('button', { name: 'Mark Done' })[0]);
         const dialog = getByRole('dialog', { name: 'Completion time' });
         const timeSpentInput = within(dialog).getByLabelText('Time Spent') as HTMLInputElement;
         expect(timeSpentInput.value).toBe('30');
@@ -2253,7 +2274,7 @@ describe('TaskItem', () => {
                 <TaskItem task={guardedTask} project={activeProject} />
             </LanguageProvider>
         );
-        fireEvent.contextMenu(view.getAllByRole('button', { name: 'Done' })[0]);
+        fireEvent.contextMenu(view.getAllByRole('button', { name: 'Mark Done' })[0]);
         const dialog = view.getByRole('dialog', { name: 'Completion time' });
         setCompletionDateTime(dialog, '2026-08-31T09:30');
         const staleSave = within(dialog).getByRole('button', { name: 'Save' });
@@ -2319,7 +2340,7 @@ describe('TaskItem', () => {
             </LanguageProvider>
         );
 
-        fireEvent.click(getByRole('button', { name: 'Done' }));
+        fireEvent.click(getByRole('button', { name: 'Mark Done' }));
 
         await waitFor(() => {
             expect(getByRole('dialog', { name: /what's the next action/i })).toBeInTheDocument();
@@ -2398,7 +2419,7 @@ describe('TaskItem', () => {
                 <TaskItem task={projectTask} project={project} />
             </LanguageProvider>
         );
-        fireEvent.click(view.getByRole('button', { name: 'Done' }));
+        fireEvent.click(view.getByRole('button', { name: 'Mark Done' }));
         await waitFor(() => {
             expect(view.getByRole('dialog', { name: /what's the next action/i })).toBeInTheDocument();
         });
@@ -2473,7 +2494,7 @@ describe('TaskItem', () => {
                 <TaskItem task={projectTask} project={project} />
             </LanguageProvider>
         );
-        fireEvent.click(view.getByRole('button', { name: 'Done' }));
+        fireEvent.click(view.getByRole('button', { name: 'Mark Done' }));
         await waitFor(() => {
             expect(view.getByRole('dialog', { name: /what's the next action/i })).toBeInTheDocument();
         });
@@ -2528,7 +2549,7 @@ describe('TaskItem', () => {
                 <TaskItem task={projectTask} project={project} />
             </LanguageProvider>
         );
-        fireEvent.click(view.getByRole('button', { name: 'Done' }));
+        fireEvent.click(view.getByRole('button', { name: 'Mark Done' }));
         await waitFor(() => {
             expect(view.getByRole('dialog', { name: /what's the next action/i })).toBeInTheDocument();
         });
@@ -2589,7 +2610,7 @@ describe('TaskItem', () => {
                 <TaskItem task={projectTask} project={project} />
             </LanguageProvider>
         );
-        fireEvent.click(view.getByRole('button', { name: 'Done' }));
+        fireEvent.click(view.getByRole('button', { name: 'Mark Done' }));
         await waitFor(() => {
             expect(view.getByRole('dialog', { name: /what's the next action/i })).toBeInTheDocument();
         });
@@ -2659,7 +2680,7 @@ describe('TaskItem', () => {
                 <TaskItem task={projectTask} project={activeProject} />
             </LanguageProvider>
         );
-        fireEvent.click(view.getByRole('button', { name: 'Done' }));
+        fireEvent.click(view.getByRole('button', { name: 'Mark Done' }));
         await waitFor(() => {
             expect(view.getByRole('dialog', { name: /what's the next action/i })).toBeInTheDocument();
         });
@@ -2731,7 +2752,7 @@ describe('TaskItem', () => {
             </LanguageProvider>
         );
 
-        fireEvent.click(getByRole('button', { name: 'Done' }));
+        fireEvent.click(getByRole('button', { name: 'Mark Done' }));
 
         await waitFor(() => {
             expect(getByRole('button', { name: /draft follow-up/i })).toBeInTheDocument();

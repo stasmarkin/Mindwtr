@@ -807,7 +807,7 @@ for (const [name, text] of Object.entries({ rowUi, model, focusUi, projectsUi, a
     assert.doesNotMatch(code(text), new RegExp(`${STATUS}(?:\\s*,\\s*${STATUS})*\\s*->\\s*${STATUS}`), `${name}: no status-to-swipe map in Kotlin`);
 }
 assert.doesNotMatch(code(rowUi), /swipeTarget|archived\.restoreToInbox/);
-assert.match(rowUi, /when \(swipe\.icon\) \{ "restore" -> Lucide\.RotateCcw; "done" -> Lucide\.Check; else -> Lucide\.ArrowRight \}/);
+assert.match(rowUi, /when \(swipe\.icon\) \{ "restore" -> Lucide\.RotateCcw; "done" -> Lucide\.Circle; else -> Lucide\.ArrowRight \}/);
 // Done is core's completeTask on every list, with RN's Undo toast (13a review: RN's swipeable-task-item shows it on Review and Contexts
 // too). Another status on a list whose contract writes its rows (Contexts, the Review screens) is that list's own action, with the
 // same enabled rule for swipe and TalkBack. A selecting row has no swipe; a list with core's bulk contract keeps the row's own swipe.

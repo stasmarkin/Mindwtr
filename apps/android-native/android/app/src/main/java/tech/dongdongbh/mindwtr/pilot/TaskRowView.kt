@@ -390,7 +390,7 @@ fun ToastCard(model: InboxViewModel, modifier: Modifier) {
 
 /**
  * RN's swipe right (swipeable-task-item.tsx): the row slides open over RN's labelled action button, 90 wide,
- * in the target status's color with core's icon and label (restore: RotateCcw, done: Check, next: ArrowRight).
+ * in the target status's color with core's label (restore: RotateCcw, done: Circle, next: ArrowRight).
  * A tap on the button runs the action; a long-press opens the status menu (#1275). Both close the row.
  * A drag past half the button's width opens it; less springs back. The row's own long-press stays free.
  * With [onDelete], a swipe left reveals RN's red Delete (Trash2) the same way.
@@ -425,7 +425,7 @@ private fun SwipeAction(enabled: Boolean, swipe: RowSwipe, shape: RoundedCornerS
                 .combinedClickable(enabled = enabled, role = Role.Button, onLongClick = { settle(0f); onMenu() }) { settle(0f); onSwipe() }
                 .semantics { contentDescription = spoken },
                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                Icon(when (swipe.icon) { "restore" -> Lucide.RotateCcw; "done" -> Lucide.Check; else -> Lucide.ArrowRight }, null,
+                Icon(when (swipe.icon) { "restore" -> Lucide.RotateCcw; "done" -> Lucide.Circle; else -> Lucide.ArrowRight }, null,
                     tint = theme.onAction, modifier = Modifier.size(20.dp))
                 Text(swipe.label, style = rnText(12, 600), color = theme.onAction, maxLines = 1, modifier = Modifier.padding(top = 4.dp))
             }
