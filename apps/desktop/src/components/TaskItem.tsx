@@ -817,7 +817,6 @@ export const TaskItem = memo(function TaskItem({
             return;
         }
         if (!session || session === closingSessionRef.current) return;
-        // Kept until saves queued on it (the autosave hook's final one included) settle; a reopen meanwhile gets a fresh session.
         closingSessionRef.current = session;
         const clear = () => {
             if (incrementalSessionRef.current === session) incrementalSessionRef.current = null;
@@ -827,7 +826,6 @@ export const TaskItem = memo(function TaskItem({
     }, [autosaveEnabled, editBaselineTask, isEditing]);
 
     const handleDiscardChanges = useCallback(() => {
-        // The draft is being dropped on purpose; the autosave unmount save must not write the reset draft back.
         incrementalSessionRef.current = null;
         resetEditState();
         setIsEditing(false);
@@ -1244,7 +1242,6 @@ export const TaskItem = memo(function TaskItem({
         }
         if (deleteFlushInFlightRef.current) return;
         deleteFlushInFlightRef.current = true;
-        // Delete is explicit, so it proceeds whatever the flush outcome; Undo restores what was written.
         void flushAutosave().catch(() => undefined).finally(() => {
             deleteFlushInFlightRef.current = false;
             deleteTaskWithUndo(task.id, { t, onBeforeDelete: closeQuickEditSession });
