@@ -11,13 +11,14 @@ import { holdSyncSave } from '../test/hold-sync-save';
 import { runAfterTaskEditExit } from './Task/task-edit-session';
 import { takeUndoableAction } from '../lib/undo-registry';
 
-const attachmentImportControl = vi.hoisted(() => ({ pending: null as Promise<never> | null }));
+const attachmentImportControl = vi.hoisted(() => ({ pending: null as Promise<unknown> | null }));
 
 vi.mock('../lib/attachment-import', async (importOriginal) => {
     const actual = await importOriginal<typeof import('../lib/attachment-import')>();
     return {
         ...actual,
-        importDroppedFileAttachment: (file: File) => attachmentImportControl.pending ?? actual.importDroppedFileAttachment(file),
+        importDroppedFileAttachment: (file: File) => (attachmentImportControl.pending as ReturnType<typeof actual.importDroppedFileAttachment> | null)
+            ?? actual.importDroppedFileAttachment(file),
     };
 });
 
@@ -3219,8 +3220,8 @@ describe('TaskItem editor autosave', () => {
         fireEvent.click(view.getAllByRole('button', { name: /edit/i })[0]);
     };
     const exitDialog = (view: ReturnType<typeof render>) => view.queryByRole('dialog', { name: /unsaved changes/i });
-    const startImport = (view: ReturnType<typeof render>) => {
-        attachmentImportControl.pending = new Promise<never>(() => {});
+    const startImport = (view: ReturnType<typeof render>, imported: Promise<unknown> = new Promise<never>(() => {})) => {
+        attachmentImportControl.pending = imported;
         const form = view.container.querySelector('form')!;
         const dataTransfer = { types: ['Files'], files: [new File(['x'], 'slow.txt')] } as unknown as DataTransfer;
         const runtime = window as unknown as { __TAURI_INTERNALS__?: unknown };
@@ -3382,6 +3383,66 @@ describe('TaskItem editor autosave', () => {
 
         await waitFor(() => expect(stored(inboxTask.id)?.deletedAt).toBeFalsy());
         expect(stored(inboxTask.id)?.title).toBe('Typed before delete');
+    });
+
+    it.each([
+        { outcome: 'failed', block: false },
+        { outcome: 'blocked', block: true },
+    ])('keeps the editor open and the task when the flush before Delete is $outcome', async ({ block }) => {
+        const inboxTask: Task = { ...autosaveTask, status: 'inbox' };
+        const { flushSave } = setupAutosave([inboxTask]);
+        const view = renderRow(inboxTask);
+        openEditor(view);
+        const input = view.getByDisplayValue('Original title');
+        input.focus();
+        fireEvent.change(input, { target: { value: 'Typed before delete' } });
+        if (block) startImport(view);
+        else flushSave.mockRejectedValue(new Error('Disk unavailable'));
+
+        fireEvent.click(view.getByRole('button', { name: /^delete$/i }));
+
+        await act(async () => { await new Promise((resolve) => window.setTimeout(resolve, 20)); });
+        expect(stored(inboxTask.id)?.deletedAt).toBeFalsy();
+        expect(view.getByDisplayValue('Typed before delete')).toBeInTheDocument();
+    });
+
+    it('does not write an attachment added just before the editing row unmounts', async () => {
+        const { updateTask } = setupAutosave();
+        const view = renderRow();
+        openEditor(view);
+        const input = view.getByDisplayValue('Original title');
+        input.focus();
+        fireEvent.change(input, { target: { value: 'Typed before unmount' } });
+        const now = new Date().toISOString();
+        startImport(view, Promise.resolve({
+            attachment: { id: 'local-file', kind: 'file', title: 'notes.txt', uri: '/tmp/notes.txt', createdAt: now, updatedAt: now },
+        }));
+        await waitFor(() => expect(view.getByText('notes.txt')).toBeInTheDocument());
+        expect(updateTask).not.toHaveBeenCalled();
+
+        view.unmount();
+
+        await waitFor(() => expect(updateTask).toHaveBeenCalledOnce());
+        expect(updateTask.mock.calls[0][1]).toEqual({ title: 'Typed before unmount' });
+        expect(stored(autosaveTask.id)?.attachments ?? []).toEqual([]);
+    });
+
+    it('clears the editing task when an autosaved status change drops the row out of its list', async () => {
+        setupAutosave();
+        const NextList = () => {
+            const tasks = useTaskStore((state) => state._allTasks);
+            return <>{tasks.filter((task) => task.status === 'next' && !task.deletedAt).map((task) => <TaskItem key={task.id} task={task} />)}</>;
+        };
+        const view = render(<LanguageProvider><NextList /></LanguageProvider>);
+        openEditor(view);
+        expect(useUiStore.getState().editingTaskId).toBe(autosaveTask.id);
+        const someday = within(view.getByRole('group', { name: 'Task status' })).getByRole('button', { name: 'Someday' });
+        someday.focus();
+        fireEvent.click(someday);
+
+        await waitFor(() => expect(stored(autosaveTask.id)?.status).toBe('someday'));
+        await waitFor(() => expect(view.queryByDisplayValue('Original title')).toBeNull());
+        expect(useUiStore.getState().editingTaskId).toBeNull();
     });
 
     it('deletes a row without an open editor right away, without flushing', async () => {

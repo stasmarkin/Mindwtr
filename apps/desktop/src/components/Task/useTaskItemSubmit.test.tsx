@@ -502,6 +502,20 @@ describe('useTaskItemSubmit incremental mode', () => {
         expect(updateTask).toHaveBeenCalledOnce();
     });
 
+    it('incremental: draftOnly leaves attachment changes out of the patch and the base', async () => {
+        const added: Attachment = { id: 'added', kind: 'file', title: 'added.txt', uri: '/tmp/added.txt', createdAt: task.createdAt, updatedAt: task.updatedAt };
+        const prepareAttachmentsForSave = vi.fn(async () => [added]);
+        const { result, rerender, sessionRef } = renderIncremental({ editAttachments: [added], prepareAttachmentsForSave });
+        rerender({ title: 'B' });
+        let outcome: TaskItemSubmitResult;
+        await act(async () => { outcome = await result.current(undefined, { keepEditing: true, draftOnly: true }); });
+        expect(outcome!).toMatchObject({ success: true, outcome: 'saved' });
+        expect(updateTask).toHaveBeenCalledWith(task.id, { title: 'B' });
+        expect(prepareAttachmentsForSave).not.toHaveBeenCalled();
+        expect(sessionRef.current?.base.rawAttachments).toBe(task.attachments);
+        expect(sessionRef.current?.base.preparedAttachments).toBe(task.attachments);
+    });
+
     it('incremental: fresh values in queue', async () => {
         const { result, rerender } = renderIncremental();
         rerender({ title: 'B' });

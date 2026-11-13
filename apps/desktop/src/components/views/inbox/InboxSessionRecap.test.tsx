@@ -228,6 +228,27 @@ describe('Inbox session recap completion paths', () => {
         expect(useTaskStore.getState()._tasksById.get('modal')?.status).toBe('done');
     });
 
+    it.each([
+        ['Mark done button', (editor: HTMLElement) => within(editor).getByTitle('Right-click to complete with a different time')],
+        ['Done status', (editor: HTMLElement) => within(within(editor).getByRole('group', { name: 'Task status' })).getByRole('button', { name: 'Done' })],
+    ] as const)('records an autosave editor completion through the %s', async (_name, findControl) => {
+        useTaskStore.setState({
+            _allTasks: [makeTask('autosaved')],
+            settings: { gtd: { taskEditorAutosave: true } },
+        });
+        const updateTask = vi.spyOn(useTaskStore.getState(), 'updateTask');
+        useTaskStore.setState({ updateTask });
+        const inbox = renderInbox();
+        fireEvent.doubleClick(inbox.getByText('Task autosaved').closest('[data-task-id]')!);
+        const editor = await waitFor(() => inbox.getByRole('group', { name: 'Task status' }).closest('form')!);
+        fireEvent.click(findControl(editor));
+        await waitFor(() => expect(inbox.getByTestId('inbox-session-recap')).toHaveTextContent('Completed in this session (1)'));
+        fireEvent.click(inbox.getByTestId('inbox-session-recap').querySelector('summary')!);
+        await waitFor(() => expect(inbox.getByTestId('inbox-session-recap')).toHaveTextContent('Task autosaved'));
+        expect(updateTask).toHaveBeenCalledWith('autosaved', expect.objectContaining({ status: 'done' }));
+        expect(useTaskStore.getState()._tasksById.get('autosaved')?.status).toBe('done');
+    });
+
     it('records an editor completion selected while attachment preparation is pending', async () => {
         const task = makeTask('upload');
         useTaskStore.setState({ _allTasks: [task] });

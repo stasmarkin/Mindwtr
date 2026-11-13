@@ -281,7 +281,7 @@ describe('useTaskItemAutosave', () => {
         edit({ title: 'B' });
         save.mockImplementationOnce(() => new Promise<TaskItemSubmitResult>(() => {}));
         unmount();
-        expect(save).toHaveBeenCalledOnce();
+        expect(save).toHaveBeenCalledWith({ draftOnly: true });
         await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
         expect(save).toHaveBeenCalledOnce();
     });
@@ -291,7 +291,7 @@ describe('useTaskItemAutosave', () => {
         input.focus();
         edit({ title: 'B' });
         rerender({ enabled: false, title: 'B' });
-        expect(save).toHaveBeenCalledOnce();
+        expect(save).toHaveBeenCalledWith({ draftOnly: true });
         await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
         expect(save).toHaveBeenCalledOnce();
     });

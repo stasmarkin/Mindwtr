@@ -28,19 +28,20 @@ export const TASK_EDIT_CLOSE_FLUSH_TIMEOUT_MS = 3000;
 
 export async function flushForClose(flushStore: () => Promise<void>, onError?: (error: unknown) => void): Promise<void> {
     const flush = activeFlush;
-    if (flush) {
-        const editorFlush = Promise.resolve().then(flush).then(() => undefined, (error: unknown) => { onError?.(error); });
-        let timer: ReturnType<typeof setTimeout> | undefined;
-        const timedOut = await Promise.race([
-            editorFlush.then(() => false),
-            new Promise<boolean>((resolve) => { timer = setTimeout(() => resolve(true), TASK_EDIT_CLOSE_FLUSH_TIMEOUT_MS); }),
-        ]);
-        clearTimeout(timer);
-        if (timedOut) {
-            await flushStore();
-            await editorFlush;
-        }
+    if (!flush) return flushStore();
+    const storeFlush = flushStore().catch((error: unknown) => { onError?.(error); });
+    const editorFlush = Promise.resolve().then(flush).then(() => undefined, (error: unknown) => { onError?.(error); });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timedOut = await Promise.race([
+        editorFlush.then(() => false),
+        new Promise<boolean>((resolve) => { timer = setTimeout(() => resolve(true), TASK_EDIT_CLOSE_FLUSH_TIMEOUT_MS); }),
+    ]);
+    clearTimeout(timer);
+    if (timedOut) {
+        await flushStore();
+        await editorFlush;
     }
+    await storeFlush;
     await flushStore();
 }
 

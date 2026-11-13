@@ -32,7 +32,7 @@ type UseTaskItemAutosaveParams = {
     isImportingFiles: boolean;
     baselineTask: Task;
     sessionRef: React.MutableRefObject<IncrementalSaveSession | null>;
-    save: () => Promise<TaskItemSubmitResult>;
+    save: (options?: { draftOnly?: boolean }) => Promise<TaskItemSubmitResult>;
     formRef: React.RefObject<HTMLElement | null>;
 };
 
@@ -121,7 +121,7 @@ export function useTaskItemAutosave({
         return () => {
             clearTimers();
             editedDuringSaveRef.current = false;
-            if (isDirty()) void latestRef.current.save().catch(() => undefined);
+            if (isDirty()) void latestRef.current.save({ draftOnly: true }).catch(() => undefined);
         };
     }, [enabled, clearTimers, isDirty]);
 
