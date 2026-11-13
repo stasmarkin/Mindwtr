@@ -195,6 +195,7 @@ export const isSettingsSyncGroupEnabled = (
 export const GTD_SYNCED_FIELD_KEYS = [
     'timeEstimatePresets',
     'taskEditor',
+    'taskEditorAutosave',
     'autoArchiveDays',
     'archiveRetentionDays',
     'defaultCaptureMethod',

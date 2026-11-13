@@ -1,6 +1,8 @@
 import { useCallback, useRef } from 'react';
 import {
+    taskDraftToChangedSincePatch,
     taskDraftToChangedUpdatePatch,
+    taskDraftToUpdatePatch,
     flushPendingSave,
     saveTaskDraftOntoLatest,
     useTaskStore,
@@ -31,7 +33,18 @@ type UseTaskItemSubmitParams = {
     beginAttachmentSave: () => boolean;
     cancelAttachmentSaveBeforeStoreUpdate: () => void;
     settlePersistedAttachmentSave: (attachments: Attachment[]) => void;
+    incrementalSessionRef?: React.MutableRefObject<IncrementalSaveSession | null>;
 };
+
+export type IncrementalSaveBase = { draft: TaskDraft; rawAttachments: Attachment[] | undefined; preparedAttachments: Attachment[] | undefined };
+export type IncrementalSaveSession = { baselineTask: Task; base: IncrementalSaveBase; tail: Promise<unknown> };
+export type TaskItemSubmitOutcome = 'saved' | 'noop' | 'blocked' | 'failed';
+export type TaskItemSubmitResult = (StoreActionResult & { outcome?: TaskItemSubmitOutcome }) | undefined;
+
+const BLOCKED: TaskItemSubmitResult = { success: false, outcome: 'blocked' };
+
+export const draftSinceLastSave = (draft: TaskDraft, base: IncrementalSaveBase): TaskDraft =>
+    draft.title.trim() ? draft : { ...draft, title: base.draft.title };
 
 
 const saveDraftOnLatest = async (id: string, base: Task, patch: Partial<Task>, beforeWrite?: () => void) => {
@@ -55,6 +68,7 @@ type TaskItemSubmitOptions = {
     timeSpentMinutesOverride?: number;
 
     keepEditing?: boolean;
+    draftOnly?: boolean;
 };
 
 export function useTaskItemSubmit({
@@ -75,15 +89,122 @@ export function useTaskItemSubmit({
     beginAttachmentSave,
     cancelAttachmentSaveBeforeStoreUpdate,
     settlePersistedAttachmentSave,
+    incrementalSessionRef,
 }: UseTaskItemSubmitParams) {
     const trackInboxCompletion = useInboxCompletion();
 
     const savedRef = useRef<{ opened: Task; saved: Task } | null>(null);
     const inFlightRef = useRef<Promise<StoreActionResult | undefined> | null>(null);
-    const latestRef = useRef({ draft, editAttachments, baselineTask });
-    latestRef.current = { draft, editAttachments, baselineTask };
-    return useCallback((event?: React.FormEvent, options?: TaskItemSubmitOptions) => {
+    const latestRef = useRef({ draft, editAttachments, baselineTask, isImportingFiles, prepareAttachmentsForSave });
+    latestRef.current = { draft, editAttachments, baselineTask, isImportingFiles, prepareAttachmentsForSave };
+    return useCallback((event?: React.FormEvent, options?: TaskItemSubmitOptions): Promise<TaskItemSubmitResult> => {
         event?.preventDefault();
+        const session = incrementalSessionRef?.current;
+        if (session) {
+            const failWithAttachmentError = (error: unknown): TaskItemSubmitResult => {
+                const message = webAttachmentUploadMessage(error, t);
+                setAttachmentError?.(message);
+                showToast(message, 'error');
+                return { success: false, error: message, outcome: 'failed' };
+            };
+            const dropped = () => incrementalSessionRef?.current === null;
+            const draftOnly = options?.draftOnly === true;
+            const run = async (): Promise<TaskItemSubmitResult> => {
+                const opened = latestRef.current.baselineTask;
+                if (dropped() || session.baselineTask !== opened) return BLOCKED;
+                if (!draftOnly && latestRef.current.isImportingFiles) return BLOCKED;
+                const generation = getAttachmentDraftGeneration?.();
+                const isCurrent = () => draftOnly || generation === getAttachmentDraftGeneration?.();
+                const { prepareAttachmentsForSave: prepare } = latestRef.current;
+                const rawAttachments = draftOnly ? session.base.rawAttachments : latestRef.current.editAttachments;
+                let preparedAttachments = draftOnly ? session.base.preparedAttachments : rawAttachments;
+                try {
+                    if (prepare && !draftOnly) preparedAttachments = await prepare();
+                } catch (error) {
+                    if (!isCurrent()) return BLOCKED;
+                    return failWithAttachmentError(error);
+                }
+                const latest = latestRef.current;
+                if (dropped() || !isCurrent() || latest.baselineTask !== opened) return BLOCKED;
+                const draft = draftSinceLastSave(latest.draft, session.base);
+                const nextBase: IncrementalSaveBase = { draft, rawAttachments, preparedAttachments };
+                const changed = taskDraftToChangedSincePatch(draft, session.base.draft, opened, {
+                    statusOverride: options?.statusOverride,
+                    attachments: preparedAttachments,
+                    previousAttachments: session.base.preparedAttachments,
+                });
+                const hasOverride = options?.completedAtOverride !== undefined || (!!options && 'timeSpentMinutesOverride' in options);
+                if (!changed && !hasOverride) {
+                    session.base = nextBase;
+                    return { success: true, outcome: 'noop' };
+                }
+                const patch = changed ?? {};
+                if (options?.completedAtOverride !== undefined) {
+                    patch.completedAt = options.completedAtOverride;
+                }
+                if (options && 'timeSpentMinutesOverride' in options) {
+                    patch.timeSpentMinutes = options.timeSpentMinutesOverride;
+                }
+
+                const lastSaved = taskDraftToUpdatePatch(session.base.draft, opened, { attachments: session.base.preparedAttachments });
+                const base: Task = { ...opened, ...lastSaved };
+                const attachmentSaveRequiresDurability = !draftOnly && beginAttachmentSave();
+                try { if (!draftOnly) retainWebAttachmentsBeforeStore?.(preparedAttachments ?? []); }
+                catch (error) {
+                    cancelAttachmentSaveBeforeStoreUpdate();
+                    return failWithAttachmentError(error);
+                }
+                let written!: Awaited<ReturnType<typeof saveDraftOnLatest>>;
+                const write = async () => {
+                    written = await saveDraftOnLatest(task.id, base, patch, draftOnly ? undefined : () => {
+                        if (!isCurrent()) throw new Error('attachments.webUploadChanged');
+                        retainWebAttachmentsBeforeStore?.(preparedAttachments ?? []);
+                    });
+                    return written.result;
+                };
+                try {
+                    await (patch.status === 'done' ? trackInboxCompletion([task.id], write) : write());
+                } catch (error) {
+                    if (!isCurrent()) return BLOCKED;
+                    return failWithAttachmentError(error);
+                }
+                const { result, saved } = written;
+                if (result.success) {
+                    session.base = nextBase;
+                    if (saved) savedRef.current = { opened, saved };
+                }
+                if (!isCurrent()) return BLOCKED;
+                if (!result.success) {
+                    if (!draftOnly) cancelAttachmentSaveBeforeStoreUpdate();
+                    showToast(result.error || t('task.updateFailed'), 'error');
+                    return { ...result, outcome: 'failed' };
+                }
+                if (attachmentSaveRequiresDurability) {
+                    try {
+                        await flushPendingSave();
+                    } catch (error) {
+                        if (!isCurrent()) return BLOCKED;
+                        const message = error instanceof Error ? error.message : String(error || t('task.updateFailed'));
+                        showToast(message, 'error');
+                        return { success: false, error: message, outcome: 'failed' };
+                    }
+                    if (!isCurrent()) return BLOCKED;
+                    settlePersistedAttachmentSave(saved?.attachments ?? rawAttachments ?? task.attachments ?? []);
+                }
+                const changedDuringSave = latestRef.current.draft !== latest.draft
+                    || latestRef.current.editAttachments !== latest.editAttachments;
+                if (!options?.keepEditing && !changedDuringSave) {
+                    setIsEditing(false);
+                    if (editingTaskId === task.id) {
+                        setEditingTaskId(null);
+                    }
+                }
+                return { ...result, outcome: 'saved' };
+            };
+            const queued = session.tail.catch(() => {}).then(run);
+            session.tail = queued;
+            return queued;
+        }
         if (inFlightRef.current) return inFlightRef.current;
         if (isImportingFiles) return Promise.resolve(undefined);
         const generation = getAttachmentDraftGeneration?.();
@@ -196,5 +317,6 @@ export function useTaskItemSubmit({
         t,
         task,
         trackInboxCompletion,
+        incrementalSessionRef,
     ]);
 }
