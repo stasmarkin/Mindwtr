@@ -68,6 +68,7 @@ type TaskItemSubmitOptions = {
     timeSpentMinutesOverride?: number;
 
     keepEditing?: boolean;
+    draftOnly?: boolean;
 };
 
 export function useTaskItemSubmit({
@@ -107,15 +108,18 @@ export function useTaskItemSubmit({
                 return { success: false, error: message, outcome: 'failed' };
             };
             const dropped = () => incrementalSessionRef?.current === null;
+            const draftOnly = options?.draftOnly === true;
             const run = async (): Promise<TaskItemSubmitResult> => {
                 const opened = latestRef.current.baselineTask;
-                if (dropped() || latestRef.current.isImportingFiles || session.baselineTask !== opened) return BLOCKED;
+                if (dropped() || session.baselineTask !== opened) return BLOCKED;
+                if (!draftOnly && latestRef.current.isImportingFiles) return BLOCKED;
                 const generation = getAttachmentDraftGeneration?.();
-                const isCurrent = () => generation === getAttachmentDraftGeneration?.();
-                const { editAttachments: rawAttachments, prepareAttachmentsForSave: prepare } = latestRef.current;
-                let preparedAttachments = rawAttachments;
+                const isCurrent = () => draftOnly || generation === getAttachmentDraftGeneration?.();
+                const { prepareAttachmentsForSave: prepare } = latestRef.current;
+                const rawAttachments = draftOnly ? session.base.rawAttachments : latestRef.current.editAttachments;
+                let preparedAttachments = draftOnly ? session.base.preparedAttachments : rawAttachments;
                 try {
-                    if (prepare) preparedAttachments = await prepare();
+                    if (prepare && !draftOnly) preparedAttachments = await prepare();
                 } catch (error) {
                     if (!isCurrent()) return BLOCKED;
                     return failWithAttachmentError(error);
@@ -144,15 +148,15 @@ export function useTaskItemSubmit({
 
                 const lastSaved = taskDraftToUpdatePatch(session.base.draft, opened, { attachments: session.base.preparedAttachments });
                 const base: Task = { ...opened, ...lastSaved };
-                const attachmentSaveRequiresDurability = beginAttachmentSave();
-                try { retainWebAttachmentsBeforeStore?.(preparedAttachments ?? []); }
+                const attachmentSaveRequiresDurability = !draftOnly && beginAttachmentSave();
+                try { if (!draftOnly) retainWebAttachmentsBeforeStore?.(preparedAttachments ?? []); }
                 catch (error) {
                     cancelAttachmentSaveBeforeStoreUpdate();
                     return failWithAttachmentError(error);
                 }
                 let written!: Awaited<ReturnType<typeof saveDraftOnLatest>>;
                 const write = async () => {
-                    written = await saveDraftOnLatest(task.id, base, patch, () => {
+                    written = await saveDraftOnLatest(task.id, base, patch, draftOnly ? undefined : () => {
                         if (!isCurrent()) throw new Error('attachments.webUploadChanged');
                         retainWebAttachmentsBeforeStore?.(preparedAttachments ?? []);
                     });
@@ -171,7 +175,7 @@ export function useTaskItemSubmit({
                 }
                 if (!isCurrent()) return BLOCKED;
                 if (!result.success) {
-                    cancelAttachmentSaveBeforeStoreUpdate();
+                    if (!draftOnly) cancelAttachmentSaveBeforeStoreUpdate();
                     showToast(result.error || t('task.updateFailed'), 'error');
                     return { ...result, outcome: 'failed' };
                 }

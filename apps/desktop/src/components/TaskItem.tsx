@@ -834,6 +834,14 @@ export const TaskItem = memo(function TaskItem({
         void session.tail.then(clear, clear);
     }, [autosaveEnabled, editBaselineTask, isEditing]);
 
+    const autosaveEditingRef = useRef(false);
+    autosaveEditingRef.current = autosaveEnabled && isEditing;
+    useEffect(() => () => {
+        if (!autosaveEditingRef.current) return;
+        const ui = useUiStore.getState();
+        if (ui.editingTaskId === task.id) ui.setEditingTaskId(null);
+    }, [task.id]);
+
     const handleDiscardChanges = useCallback(() => {
         incrementalSessionRef.current = null;
         resetEditState();
@@ -870,7 +878,7 @@ export const TaskItem = memo(function TaskItem({
         isImportingFiles,
         baselineTask: editBaselineTask,
         sessionRef: incrementalSessionRef,
-        save: () => handleSubmit(undefined, { keepEditing: true }),
+        save: (options) => handleSubmit(undefined, { keepEditing: true, ...options }),
         formRef: editorFormRef,
     });
 
@@ -1251,8 +1259,9 @@ export const TaskItem = memo(function TaskItem({
         }
         if (deleteFlushInFlightRef.current) return;
         deleteFlushInFlightRef.current = true;
-        void flushAutosave().catch(() => undefined).finally(() => {
+        void flushAutosave().catch(() => 'failed' as const).then((outcome) => {
             deleteFlushInFlightRef.current = false;
+            if (outcome !== 'saved' && outcome !== 'clean') return;
             deleteTaskWithUndo(task.id, { t, onBeforeDelete: closeQuickEditSession });
         });
     }, [autosaveEnabled, closeQuickEditSession, flushAutosave, isEditing, t, task.id]);
