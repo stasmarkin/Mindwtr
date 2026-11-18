@@ -296,7 +296,10 @@ export const TaskItem = memo(function TaskItem({
     const undoNotificationsEnabled = settings?.undoNotificationsEnabled !== false;
     const showTaskAge = settings?.appearance?.showTaskAge === true;
     const focusTaskLimit = normalizeFocusTaskLimit(settings?.gtd?.focusTaskLimit);
-    const autosaveEnabled = settings?.gtd?.taskEditorAutosave === true;
+    const autosaveSetting = settings?.gtd?.taskEditorAutosave === true;
+    const sessionAutosaveRef = useRef(autosaveSetting);
+    if (!isEditing) sessionAutosaveRef.current = autosaveSetting;
+    const autosaveEnabled = sessionAutosaveRef.current;
     const density = settings?.appearance?.density ?? 'comfortable';
     const isCondensed = density === 'condensed';
     const isCompact = density === 'compact';

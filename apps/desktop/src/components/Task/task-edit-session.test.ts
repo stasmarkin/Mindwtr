@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { TASK_EDIT_CLOSE_FLUSH_TIMEOUT_MS, flushForClose, registerTaskEditFlush } from './task-edit-session';
+import { TASK_EDIT_CLOSE_FLUSH_TIMEOUT_MS, flushForClose, isTaskEditLeftUnsaved, registerTaskEditFlush, type TaskEditFlushOutcome } from './task-edit-session';
 
 describe('flushForClose', () => {
     it('starts the store flush synchronously and flushes the store again after the editor flush', async () => {
         const calls: string[] = [];
-        const release = registerTaskEditFlush(async () => { calls.push('editor'); });
+        const release = registerTaskEditFlush(async () => { calls.push('editor'); return 'saved'; });
         try {
             const closing = flushForClose(async () => { calls.push('store'); });
             expect(calls).toEqual(['store']);
@@ -22,8 +22,8 @@ describe('flushForClose', () => {
         const flushStore = vi.fn(async () => {});
         const onError = vi.fn();
         try {
-            await flushForClose(flushStore, onError);
-            await expect(flushForClose(flushStore)).resolves.toBeUndefined();
+            await expect(flushForClose(flushStore, onError)).resolves.toBe('failed');
+            await expect(flushForClose(flushStore)).resolves.toBe('failed');
         } finally {
             release();
         }
@@ -32,17 +32,17 @@ describe('flushForClose', () => {
     });
 
     it('only flushes the store when no editor flush is registered', async () => {
-        const editorFlush = vi.fn(async () => {});
+        const editorFlush = vi.fn(async () => 'saved' as const);
         registerTaskEditFlush(editorFlush)();
         const flushStore = vi.fn(async () => {});
-        await flushForClose(flushStore);
+        await expect(flushForClose(flushStore)).resolves.toBe('none');
         expect(editorFlush).not.toHaveBeenCalled();
         expect(flushStore).toHaveBeenCalledOnce();
     });
 
     it('flushes the store at once, at the timeout and again once a slow editor flush lands', async () => {
         vi.useFakeTimers();
-        const release = registerTaskEditFlush(() => new Promise<void>((resolve) => { setTimeout(resolve, 4000); }));
+        const release = registerTaskEditFlush(() => new Promise<'saved'>((resolve) => { setTimeout(() => resolve('saved'), 4000); }));
         const flushStore = vi.fn(async () => {});
         let done = false;
         try {
@@ -80,5 +80,58 @@ describe('flushForClose', () => {
             release();
             vi.useRealTimers();
         }
+    });
+
+    it.each<[TaskEditFlushOutcome, TaskEditFlushOutcome]>([
+        ['saved', 'failed'],
+        ['clean', 'failed'],
+        ['blocked', 'blocked'],
+        ['failed', 'failed'],
+    ])('reports an editor flush outcome %s as %s when the final store flush rejects', async (editorOutcome, expected) => {
+        const failure = new Error('store flush failed');
+        const release = registerTaskEditFlush(async () => editorOutcome);
+        const flushStore = vi.fn(async () => {});
+        flushStore.mockResolvedValueOnce(undefined).mockRejectedValueOnce(failure);
+        const onError = vi.fn();
+        try {
+            await expect(flushForClose(flushStore, onError)).resolves.toBe(expected);
+        } finally {
+            release();
+        }
+        expect(onError).toHaveBeenCalledWith(failure);
+    });
+
+    it('reports a saved editor as failed when the first store flush rejects even though the final one resolves', async () => {
+        const release = registerTaskEditFlush(async () => 'saved');
+        const flushStore = vi.fn(async () => {});
+        flushStore.mockRejectedValueOnce(new Error('snapshot dropped after retries'));
+        try {
+            await expect(flushForClose(flushStore, vi.fn())).resolves.toBe('failed');
+        } finally {
+            release();
+        }
+        expect(flushStore).toHaveBeenCalledTimes(2);
+    });
+
+    it.each<TaskEditFlushOutcome>(['saved', 'clean', 'blocked', 'failed'])('reports the editor flush outcome %s after flushing the store', async (outcome) => {
+        const release = registerTaskEditFlush(async () => outcome);
+        const flushStore = vi.fn(async () => {});
+        try {
+            await expect(flushForClose(flushStore)).resolves.toBe(outcome);
+        } finally {
+            release();
+        }
+        expect(flushStore).toHaveBeenCalledTimes(2);
+    });
+});
+
+describe('isTaskEditLeftUnsaved', () => {
+    it('treats only blocked and failed editor flushes as unsaved', () => {
+        expect(isTaskEditLeftUnsaved('blocked')).toBe(true);
+        expect(isTaskEditLeftUnsaved('failed')).toBe(true);
+        expect(isTaskEditLeftUnsaved('saved')).toBe(false);
+        expect(isTaskEditLeftUnsaved('clean')).toBe(false);
+        expect(isTaskEditLeftUnsaved('none')).toBe(false);
+        expect(isTaskEditLeftUnsaved(undefined)).toBe(false);
     });
 });

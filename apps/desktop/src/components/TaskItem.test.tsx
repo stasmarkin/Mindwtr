@@ -3302,6 +3302,35 @@ describe('TaskItem editor autosave', () => {
         expect(exitDialog(view)).toBeNull();
     });
 
+    it('keeps autosaving an open editor when autosave is turned off elsewhere and applies the setting on the next open', async () => {
+        setupAutosave();
+        const view = renderRow();
+        openEditor(view);
+        const input = view.getByDisplayValue('Original title');
+        fireEvent.change(input, { target: { value: 'Autosaved B' } });
+        fireEvent.focusOut(input);
+        await waitFor(() => expect(stored(autosaveTask.id)?.title).toBe('Autosaved B'));
+
+        act(() => {
+            useTaskStore.setState((state) => ({
+                ...state,
+                settings: { ...state.settings, gtd: { ...state.settings?.gtd, taskEditorAutosave: false } },
+            }));
+        });
+        fireEvent.change(input, { target: { value: 'Original title' } });
+        fireEvent.keyDown(input, { key: 'Escape' });
+
+        await waitFor(() => expect(view.queryByDisplayValue('Original title')).toBeNull());
+        expect(stored(autosaveTask.id)?.title).toBe('Original title');
+        expect(exitDialog(view)).toBeNull();
+
+        openEditor(view);
+        fireEvent.change(view.getByDisplayValue('Original title'), { target: { value: 'Manual edit' } });
+        fireEvent.keyDown(view.getByDisplayValue('Manual edit'), { key: 'Escape' });
+        await waitFor(() => expect(exitDialog(view)).not.toBeNull());
+        expect(stored(autosaveTask.id)?.title).toBe('Original title');
+    });
+
     it('opens the clicked task after an outside pointerdown once the held flush settles', async () => {
         const other: Task = { ...autosaveTask, id: 'autosave-other', title: 'Other task' };
         const { flushSave } = setupAutosave([autosaveTask, other]);

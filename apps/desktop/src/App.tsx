@@ -128,6 +128,7 @@ import {
 import { resolveCloseBehavior } from './lib/window-behavior';
 import { handleDesktopCloseRequest } from './lib/close-request-handler';
 import { beginCloseFlush, resetCloseFlushGate } from './lib/close-flush-gate';
+import { quitAfterCloseFlush } from './lib/quit-after-close-flush';
 import { hideMainWindowToTray } from './lib/hide-to-tray';
 import { useConfirmDialog } from './hooks/useConfirmDialog';
 import { useArchiveRetentionRunner } from './hooks/useArchiveRetentionRunner';
@@ -751,25 +752,43 @@ function App() {
         await hideMainWindowToTray();
     }, []);
 
-    const quitApp = useCallback(async () => {
-
-
-        await beginCloseFlush({
-            flush: () => flushForClose(flushPendingSave, (error) => void logError(error, { scope: 'app', step: 'Save failed' })),
-            timeoutMs: CLOSE_FLUSH_TIMEOUT_MS,
-            logStep: (step) => {
-                void logInfo(`Close trace: ${step}`, { scope: 'app', force: true });
+    const quitApp = useCallback(async (options?: { acceptUnsavedEdits?: boolean }) => {
+        const logStep = (step: string) => {
+            void logInfo(`Close trace: ${step}`, { scope: 'app', force: true });
+        };
+        await quitAfterCloseFlush({
+            flushBeforeQuit: () => beginCloseFlush({
+                flush: () => flushForClose(flushPendingSave, (error) => void logError(error, { scope: 'app', step: 'Save failed' })),
+                timeoutMs: CLOSE_FLUSH_TIMEOUT_MS,
+                logStep,
+                reportError: (label, error) => {
+                    void logError(error, { scope: 'app', step: label });
+                },
+            }),
+            acceptUnsavedEdits: options?.acceptUnsavedEdits,
+            confirmQuitWithUnsavedEdits: () => requestConfirmation({
+                title: translateOrFallbackRef.current('app.closeStillSavingTitle', 'Mindwtr is still saving'),
+                description: translateOrFallbackRef.current(
+                    'app.closeStillSavingBody',
+                    'Mindwtr has not finished saving your recent changes. '
+                    + 'Close anyway? Unsaved changes will be lost.'
+                ),
+                confirmLabel: translateOrFallbackRef.current('common.close', 'Close'),
+                cancelLabel: translateOrFallbackRef.current('common.cancel', 'Cancel'),
+            }),
+            keepOpen: () => {
+                logStep('user kept the window open with unsaved task edits');
+                resetCloseFlushGate();
             },
-            reportError: (label, error) => {
-                void logError(error, { scope: 'app', step: label });
+            quit: async () => {
+                logStep('invoking quit_app');
+                await invokeNative('quit_app');
+
+
+                logStep('quit_app invoke returned without exit');
             },
         });
-        void logInfo('Close trace: invoking quit_app', { scope: 'app', force: true });
-        await invokeNative('quit_app');
-
-
-        void logInfo('Close trace: quit_app invoke returned without exit', { scope: 'app', force: true });
-    }, []);
+    }, [requestConfirmation]);
 
     useEffect(() => {
         if (import.meta.env.MODE === 'test' || import.meta.env.VITEST || process.env.NODE_ENV === 'test') return;
@@ -874,7 +893,7 @@ function App() {
                             return;
                         }
                         logStep('user chose to close while save still pending');
-                        await quitApp().catch((error) => reportError('Quit failed', error));
+                        await quitApp({ acceptUnsavedEdits: true }).catch((error) => reportError('Quit failed', error));
                     });
                     if (disposed) {
                         unlisten();

@@ -3,7 +3,10 @@
 
 const activeSessions = new Map<string, object>();
 let activeExitRequest: ((action: () => void) => void) | null = null;
-let activeFlush: (() => Promise<unknown>) | null = null;
+let activeFlush: (() => Promise<TaskEditFlushOutcome>) | null = null;
+
+export type TaskEditFlushOutcome = 'saved' | 'clean' | 'blocked' | 'failed';
+export type TaskEditCloseOutcome = TaskEditFlushOutcome | 'none';
 
 export function registerTaskEditExitRequest(request: (action: () => void) => void): () => void {
     activeExitRequest = request;
@@ -17,7 +20,7 @@ export function runAfterTaskEditExit(action: () => void): void {
     else action();
 }
 
-export function registerTaskEditFlush(flush: () => Promise<unknown>): () => void {
+export function registerTaskEditFlush(flush: () => Promise<TaskEditFlushOutcome>): () => void {
     activeFlush = flush;
     return () => {
         if (activeFlush === flush) activeFlush = null;
@@ -26,23 +29,37 @@ export function registerTaskEditFlush(flush: () => Promise<unknown>): () => void
 
 export const TASK_EDIT_CLOSE_FLUSH_TIMEOUT_MS = 3000;
 
-export async function flushForClose(flushStore: () => Promise<void>, onError?: (error: unknown) => void): Promise<void> {
+export async function flushForClose(flushStore: () => Promise<void>, onError?: (error: unknown) => void): Promise<TaskEditCloseOutcome> {
     const flush = activeFlush;
-    if (!flush) return flushStore();
-    const storeFlush = flushStore().catch((error: unknown) => { onError?.(error); });
-    const editorFlush = Promise.resolve().then(flush).then(() => undefined, (error: unknown) => { onError?.(error); });
+    if (!flush) {
+        await flushStore();
+        return 'none';
+    }
+    let storeFailed = false;
+    const flushStoreReportingErrors = () => flushStore().catch((error: unknown) => {
+        storeFailed = true;
+        onError?.(error);
+    });
+    const storeFlush = flushStoreReportingErrors();
+    const editorFlush = Promise.resolve().then(flush).catch((error: unknown): TaskEditFlushOutcome => {
+        onError?.(error);
+        return 'failed';
+    });
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timedOut = await Promise.race([
         editorFlush.then(() => false),
         new Promise<boolean>((resolve) => { timer = setTimeout(() => resolve(true), TASK_EDIT_CLOSE_FLUSH_TIMEOUT_MS); }),
     ]);
     clearTimeout(timer);
-    if (timedOut) {
-        await flushStore();
-        await editorFlush;
-    }
+    if (timedOut) await flushStoreReportingErrors();
+    const outcome = await editorFlush;
     await storeFlush;
-    await flushStore();
+    await flushStoreReportingErrors();
+    return storeFailed && !isTaskEditLeftUnsaved(outcome) ? 'failed' : outcome;
+}
+
+export function isTaskEditLeftUnsaved(outcome: TaskEditCloseOutcome | undefined): boolean {
+    return outcome === 'blocked' || outcome === 'failed';
 }
 
 export function tryClaimTaskEditSession(taskId: string, owner: object): boolean {
