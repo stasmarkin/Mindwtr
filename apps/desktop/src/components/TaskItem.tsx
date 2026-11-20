@@ -34,6 +34,7 @@ import {
     updateTaskFromLatest,
     areDraftAttachmentsDirty,
     isTaskDraftDirty,
+    createTaskDraft,
     type TaskDraftSetter,
 } from '@mindwtr/core';
 import { cn } from '../lib/utils';
@@ -43,7 +44,7 @@ import { TaskItemEditor } from './Task/TaskItemEditor';
 import { TaskItemDisplay } from './Task/TaskItemDisplay';
 import { TaskItemEditorSurface } from './Task/TaskItemEditorSurface';
 import { TaskItemFieldRenderer } from './Task/TaskItemFieldRenderer';
-import { registerTaskEditExitRequest, releaseTaskEditSession, runAfterTaskEditExit, tryClaimTaskEditSession } from './Task/task-edit-session';
+import { registerTaskEditExitRequest, registerTaskEditFlush, releaseTaskEditSession, runAfterTaskEditExit, tryClaimTaskEditSession } from './Task/task-edit-session';
 import { TaskAttachmentOverlays } from './Task/TaskAttachmentOverlays';
 import { TaskRecurrenceOverlay } from './Task/TaskRecurrenceOverlay';
 import { ProjectNextActionPrompt } from './Task/ProjectNextActionPrompt';
@@ -62,8 +63,9 @@ import { useTaskItemAi } from './Task/useTaskItemAi';
 import { useTaskItemEditState } from './Task/useTaskItemEditState';
 import { useTaskItemProjectContext } from './Task/useTaskItemProjectContext';
 import { useTaskItemFieldLayout } from './Task/useTaskItemFieldLayout';
-import { useTaskItemSubmit } from './Task/useTaskItemSubmit';
 import { useInboxCompletion } from '../contexts/inbox-session-context';
+import { useTaskItemSubmit, type IncrementalSaveSession } from './Task/useTaskItemSubmit';
+import { useTaskItemAutosave } from './Task/useTaskItemAutosave';
 import { formatTaskMarkedDoneMessage, formatTaskMovedMessage } from '@mindwtr/core';
 import { dispatchNavigateEvent } from '../lib/navigation-events';
 import { usePomodoroStore } from '../store/pomodoro-store';
@@ -265,6 +267,11 @@ export const TaskItem = memo(function TaskItem({
     const [isSavingExit, setIsSavingExit] = useState(false);
     const pendingExitActionRef = useRef<(() => void) | null>(null);
     const releaseExitRequestRef = useRef<(() => void) | null>(null);
+    const exitFlushInFlightRef = useRef(false);
+    const deleteFlushInFlightRef = useRef(false);
+    const incrementalSessionRef = useRef<IncrementalSaveSession | null>(null);
+    const closingSessionRef = useRef<IncrementalSaveSession | null>(null);
+    const editorFormRef = useRef<HTMLFormElement | null>(null);
     const [showWaitingAssignmentPrompt, setShowWaitingAssignmentPrompt] = useState(false);
 
 
@@ -289,6 +296,10 @@ export const TaskItem = memo(function TaskItem({
     const undoNotificationsEnabled = settings?.undoNotificationsEnabled !== false;
     const showTaskAge = settings?.appearance?.showTaskAge === true;
     const focusTaskLimit = normalizeFocusTaskLimit(settings?.gtd?.focusTaskLimit);
+    const autosaveSetting = settings?.gtd?.taskEditorAutosave === true;
+    const sessionAutosaveRef = useRef(autosaveSetting);
+    if (!isEditing) sessionAutosaveRef.current = autosaveSetting;
+    const autosaveEnabled = sessionAutosaveRef.current;
     const density = settings?.appearance?.density ?? 'comfortable';
     const isCondensed = density === 'condensed';
     const isCompact = density === 'compact';
@@ -801,8 +812,41 @@ export const TaskItem = memo(function TaskItem({
         };
     }, [isEditing, lockEditing, task.id, unlockEditing]);
 
+    useEffect(() => {
+        const session = incrementalSessionRef.current;
+        if (isEditing && autosaveEnabled) {
+            if (session && session !== closingSessionRef.current && session.baselineTask === editBaselineTask) return;
+            incrementalSessionRef.current = {
+                baselineTask: editBaselineTask,
+                base: {
+                    draft: createTaskDraft(editBaselineTask),
+                    rawAttachments: editBaselineTask.attachments,
+                    preparedAttachments: editBaselineTask.attachments,
+                },
+                tail: session?.tail ?? Promise.resolve(),
+            };
+            closingSessionRef.current = null;
+            return;
+        }
+        if (!session || session === closingSessionRef.current) return;
+        closingSessionRef.current = session;
+        const clear = () => {
+            if (incrementalSessionRef.current === session) incrementalSessionRef.current = null;
+            if (closingSessionRef.current === session) closingSessionRef.current = null;
+        };
+        void session.tail.then(clear, clear);
+    }, [autosaveEnabled, editBaselineTask, isEditing]);
+
+    const autosaveEditingRef = useRef(false);
+    autosaveEditingRef.current = autosaveEnabled && isEditing;
+    useEffect(() => () => {
+        if (!autosaveEditingRef.current) return;
+        const ui = useUiStore.getState();
+        if (ui.editingTaskId === task.id) ui.setEditingTaskId(null);
+    }, [task.id]);
 
     const handleDiscardChanges = useCallback(() => {
+        incrementalSessionRef.current = null;
         resetEditState();
         setIsEditing(false);
         if (editingTaskId === task.id) {
@@ -828,6 +872,17 @@ export const TaskItem = memo(function TaskItem({
         beginAttachmentSave,
         cancelAttachmentSaveBeforeStoreUpdate,
         settlePersistedAttachmentSave,
+        incrementalSessionRef,
+    });
+    const { flush: flushAutosave } = useTaskItemAutosave({
+        enabled: autosaveEnabled && isEditing,
+        draft,
+        editAttachments,
+        isImportingFiles,
+        baselineTask: editBaselineTask,
+        sessionRef: incrementalSessionRef,
+        save: (options) => handleSubmit(undefined, { keepEditing: true, ...options }),
+        formRef: editorFormRef,
     });
 
     const project = currentProject;
@@ -1192,6 +1247,7 @@ export const TaskItem = memo(function TaskItem({
 
 
         if (isEditing) {
+            incrementalSessionRef.current = null;
             resetEditState();
             setIsEditing(false);
         }
@@ -1200,8 +1256,18 @@ export const TaskItem = memo(function TaskItem({
         }
     }, [editingTaskId, isEditing, resetEditState, setEditingTaskId, task.id]);
     const handleDeleteTask = useCallback(() => {
-        deleteTaskWithUndo(task.id, { t, onBeforeDelete: closeQuickEditSession });
-    }, [closeQuickEditSession, t, task.id]);
+        if (!(isEditing && autosaveEnabled)) {
+            deleteTaskWithUndo(task.id, { t, onBeforeDelete: closeQuickEditSession });
+            return;
+        }
+        if (deleteFlushInFlightRef.current) return;
+        deleteFlushInFlightRef.current = true;
+        void flushAutosave().catch(() => 'failed' as const).then((outcome) => {
+            deleteFlushInFlightRef.current = false;
+            if (outcome !== 'saved' && outcome !== 'clean') return;
+            deleteTaskWithUndo(task.id, { t, onBeforeDelete: closeQuickEditSession });
+        });
+    }, [autosaveEnabled, closeQuickEditSession, flushAutosave, isEditing, t, task.id]);
     const handleTaskCompleted = useCallback((previousStatus: TaskStatus, wasFocusedToday: boolean) => {
         const undo = registerUndoableAction(() => {
             closeProjectNextActionPrompt();
@@ -1378,7 +1444,21 @@ export const TaskItem = memo(function TaskItem({
         action?.();
     }, [handleDiscardChanges, recordExitDecision]);
     const requestEditorExit = useCallback((action: () => void) => {
+        if (autosaveEnabled && exitFlushInFlightRef.current) {
+            pendingExitActionRef.current = action;
+            return;
+        }
         if (pendingExitActionRef.current) return;
+        if (autosaveEnabled) {
+            pendingExitActionRef.current = action;
+            exitFlushInFlightRef.current = true;
+            void flushAutosave().catch(() => 'failed' as const).then((outcome) => {
+                exitFlushInFlightRef.current = false;
+                if (outcome === 'saved' || outcome === 'clean') finishEditorExit('saved');
+                else setShowExitConfirm(true);
+            });
+            return;
+        }
         if (!hasPendingEdits()) {
             releaseExitRequestRef.current?.();
             handleDiscardChanges();
@@ -1387,7 +1467,7 @@ export const TaskItem = memo(function TaskItem({
         }
         pendingExitActionRef.current = action;
         setShowExitConfirm(true);
-    }, [handleDiscardChanges, hasPendingEdits]);
+    }, [autosaveEnabled, finishEditorExit, flushAutosave, handleDiscardChanges, hasPendingEdits]);
     useEffect(() => {
         if (!isEditing) return;
         const release = registerTaskEditExitRequest(requestEditorExit);
@@ -1397,6 +1477,10 @@ export const TaskItem = memo(function TaskItem({
             if (releaseExitRequestRef.current === release) releaseExitRequestRef.current = null;
         };
     }, [isEditing, requestEditorExit]);
+    useEffect(() => {
+        if (!(isEditing && autosaveEnabled)) return;
+        return registerTaskEditFlush(() => flushAutosave());
+    }, [autosaveEnabled, flushAutosave, isEditing]);
     const saveAndExitEditor = useCallback(async () => {
         if (isSavingExit) return;
         setIsSavingExit(true);
@@ -1451,12 +1535,16 @@ export const TaskItem = memo(function TaskItem({
 
 
             if (target instanceof Element && target.closest('[role="dialog"],[role="alertdialog"],[role="menu"],[role="listbox"]')) return;
+            if (autosaveEnabled) {
+                requestEditorExit(() => {});
+                return;
+            }
             if (hasPendingEdits()) return;
             handleDiscardChanges();
         };
         document.addEventListener('pointerdown', handlePointerDown, true);
         return () => document.removeEventListener('pointerdown', handlePointerDown, true);
-    }, [handleDiscardChanges, hasPendingEdits, isEditing, isModalEditor]);
+    }, [autosaveEnabled, handleDiscardChanges, hasPendingEdits, isEditing, isModalEditor, requestEditorExit]);
     const handleOpenQuickActionMenu = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
         if (selectionMode || isEditing) return;
         event.preventDefault();
@@ -1679,6 +1767,8 @@ export const TaskItem = memo(function TaskItem({
             onCancel={handleEditorCancel}
             isImportingFiles={isImportingFiles}
             onSubmit={handleSubmit}
+            autosave={autosaveEnabled}
+            formRef={editorFormRef}
             onFilesDropped={(files) => void addDroppedFileAttachments(files)}
         />
     );

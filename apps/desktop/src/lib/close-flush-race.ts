@@ -1,25 +1,27 @@
-
-
-
-export type CloseFlushRaceOptions = {
-    flush: () => Promise<void>;
+export type CloseFlushRaceOptions<T = void> = {
+    flush: () => Promise<T>;
     timeoutMs: number;
     logStep?: (step: string) => void;
     reportError: (label: string, error: unknown) => void;
 };
 
-export type CloseFlushRaceResult = {
+export type CloseFlushRaceResult<T = void> = {
     timedOut: boolean;
+    value?: T;
 };
 
-export async function raceCloseFlush({
+export async function raceCloseFlush<T = void>({
     flush,
     timeoutMs,
     logStep,
     reportError,
-}: CloseFlushRaceOptions): Promise<CloseFlushRaceResult> {
+}: CloseFlushRaceOptions<T>): Promise<CloseFlushRaceResult<T>> {
     logStep?.('flush before close started');
-    const flushPromise = flush().catch((error) => reportError('Save failed', error));
+    let value: T | undefined;
+    const flushPromise = flush().then(
+        (result) => { value = result; },
+        (error) => reportError('Save failed', error),
+    );
 
     let timeoutId: ReturnType<typeof setTimeout>;
     const timedOut = await Promise.race([
@@ -31,5 +33,5 @@ export async function raceCloseFlush({
     clearTimeout(timeoutId!);
 
     logStep?.(timedOut ? `flush before close timed out after ${timeoutMs}ms` : 'flush before close settled');
-    return { timedOut };
+    return timedOut || value === undefined ? { timedOut } : { timedOut, value };
 }
