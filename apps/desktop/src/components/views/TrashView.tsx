@@ -281,6 +281,7 @@ export function TrashView() {
                 if (task) void scopeRef.current.handlePurgeTask(task.id);
             },
             setStatusSelected: undefined,
+            stepPrioritySelected: undefined,
         };
     }, []);
 

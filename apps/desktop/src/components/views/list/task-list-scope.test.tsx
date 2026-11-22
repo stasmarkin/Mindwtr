@@ -394,6 +394,20 @@ describe.each(SCOPE_CASES)('createTaskListScope — $name', ({ extraDeps }) => {
         expect(events).toEqual(['toggle-focus', 'rename-title']);
     });
 
+    it('requests priority steps on the selected task row', () => {
+        const scope = build();
+        const events: string[] = [];
+        document.querySelector('[data-task-id="1"]')!
+            .addEventListener('mindwtr:task-row-action', (event) => {
+                events.push((event as CustomEvent<string>).detail);
+            });
+
+        scope.stepPrioritySelected?.(1);
+        scope.stepPrioritySelected?.(-1);
+
+        expect(events).toEqual(['raise-priority', 'lower-priority']);
+    });
+
     it('focuses the add-task input only when the view has one', () => {
         const input = document.createElement('input');
         document.body.appendChild(input);
