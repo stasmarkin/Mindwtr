@@ -378,6 +378,7 @@ export type DefaultTaskAreaMode = 'none' | 'fixed' | 'active';
 export interface GtdSettings {
     timeEstimatePresets?: TimeEstimate[];
     taskEditor?: TaskEditorSettings;
+    taskEditorAutosave?: boolean;
     autoArchiveDays?: number;
     archiveRetentionDays?: number;
     defaultCaptureMethod?: 'text' | 'audio';

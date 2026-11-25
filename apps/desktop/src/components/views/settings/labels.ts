@@ -174,6 +174,8 @@ export const SETTINGS_LABEL_KEYS = [
     'taskEditorPresentationInlineDesc',
     'taskEditorPresentationModal',
     'taskEditorPresentationModalDesc',
+    'taskEditorAutosave',
+    'taskEditorAutosaveDesc',
     'taskEditorLayoutReset',
     'taskEditorSection',
     'taskEditorDefaultOpen',

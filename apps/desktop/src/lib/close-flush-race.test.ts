@@ -74,4 +74,14 @@ describe('raceCloseFlush (#913)', () => {
         expect(result).toEqual({ timedOut: false });
         expect(reportError).toHaveBeenCalledWith('Save failed', error);
     });
+
+    it('passes the settled flush value through', async () => {
+        const result = await raceCloseFlush({
+            flush: () => Promise.resolve('blocked'),
+            timeoutMs: 10_000,
+            reportError: vi.fn(),
+        });
+
+        expect(result).toEqual({ timedOut: false, value: 'blocked' });
+    });
 });
