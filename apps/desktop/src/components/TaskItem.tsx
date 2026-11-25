@@ -81,6 +81,7 @@ import { setCalendarTaskDragData } from '../lib/calendar-task-drag';
 import { useTaskItemStoreState, useTaskItemUiState } from './Task/useTaskItemStoreState';
 import type { TaskInputAcceptedSuggestion } from './Task/TaskInput';
 import { TASK_ROW_ACTION_EVENT, type TaskRowAction } from '../lib/task-row-actions';
+import { stepTaskPriority } from '../lib/priority-step';
 
 const IS_MAC_PLATFORM = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform);
 
@@ -454,11 +455,23 @@ export const TaskItem = memo(function TaskItem({
             }
             if (action === 'rename-title' && !effectiveReadOnly && !selectionMode && !isEditing) {
                 setRenameRequestToken((token) => token + 1);
+                return;
+            }
+            if ((action === 'raise-priority' || action === 'lower-priority') && prioritiesEnabled && !effectiveReadOnly && !isEditing) {
+                const liveTask = getLiveMutableTask(task.id);
+                if (!liveTask || liveTask.status === 'reference') return;
+                const nextPriority = stepTaskPriority(liveTask.priority, action === 'raise-priority' ? 1 : -1);
+                if (nextPriority === liveTask.priority) return;
+                void updateTask(liveTask.id, { priority: nextPriority })
+                    .then((result) => {
+                        if (!result.success) throw new Error(result.error || 'Failed to update task priority');
+                    })
+                    .catch((error) => reportError('Failed to update task priority', error));
             }
         };
         root.addEventListener(TASK_ROW_ACTION_EVENT, handleTaskRowAction);
         return () => root.removeEventListener(TASK_ROW_ACTION_EVENT, handleTaskRowAction);
-    }, [effectiveReadOnly, isEditing, selectionMode, toggleTaskFocus]);
+    }, [effectiveReadOnly, getLiveMutableTask, isEditing, prioritiesEnabled, selectionMode, task.id, toggleTaskFocus, updateTask]);
     const handleToggleChecklistItem = useCallback((index: number) => {
         if (effectiveReadOnly) return;
         const shown = task.checklist?.[index];

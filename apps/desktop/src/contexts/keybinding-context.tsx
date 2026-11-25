@@ -19,6 +19,7 @@ import {
 import { areaFilterSelectionToFilters } from '@mindwtr/core';
 import type { TaskStatus } from '@mindwtr/core';
 import { getWorkspaceCache } from '../lib/workspace-cache';
+import type { PriorityStep } from '../lib/priority-step';
 
 export type KeybindingStyle = 'vim' | 'emacs' | 'standard';
 
@@ -41,6 +42,7 @@ export interface TaskListScope {
     renameSelected?: () => void;
     deleteSelected: () => void;
     setStatusSelected?: (status: TaskStatus) => void;
+    stepPrioritySelected?: (step: PriorityStep) => void;
     copySelected?: (includeDescription: boolean, requireHighlight?: boolean) => boolean;
     focusAddInput?: () => boolean;
 
@@ -942,6 +944,13 @@ export function KeybindingProvider({
                     e.preventDefault();
                     if (!(projectScopeRef.current?.ownsFocus() ?? false)) {
                         pendingRef.current = { key: 's', timestamp: now };
+                    }
+                    return;
+                }
+                if (!pendingRef.current.key && (e.key === '[' || e.key === ']')) {
+                    e.preventDefault();
+                    if (!e.repeat && !(projectScopeRef.current?.ownsFocus() ?? false)) {
+                        scopeRef.current?.stepPrioritySelected?.(e.key === ']' ? 1 : -1);
                     }
                     return;
                 }

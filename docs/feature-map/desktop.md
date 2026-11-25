@@ -227,9 +227,9 @@ Source: `apps/desktop/src` (Tauri + React). Labels come from `packages/core/src/
 ## Task list keyboard
 
 - Reach: Any task list.
-- Shortcuts: All styles: `j`/`k` or arrows move, `gg`/`G` first and last, `Enter` expands the selected task, `.` opens the task menu, `s` then `i`/`n`/`w`/`s`/`d`/`a` sets status, `Ctrl+C` copies the title, `Ctrl+Click`/`Shift+Click` selects. Vim: `e` edit, `x` toggle done, `dd` delete, `yy` copy title, `yi` copy with description. Standard: `Shift+Enter` edit, `e` toggle done, `x` select, `F2` rename, `#` delete, `z` undo. Emacs: `Ctrl+N`/`Ctrl+P` move, `Ctrl+E` edit, `Ctrl+T` toggle done, `Ctrl+D` delete, `Ctrl+.` task menu.
-- Code: `apps/desktop/src/contexts/keybinding-context.tsx`, `apps/desktop/src/components/views/list/task-list-scope.ts`
-- Checks: `e2e/keyboard-ui-compat.spec.ts`, `e2e/task-copy-title.spec.ts`, `apps/desktop/src/contexts/keybinding-context.test.tsx`, `apps/desktop/src/contexts/keybinding-copy.test.tsx`, `apps/desktop/src/components/views/list/task-list-scope.test.tsx`
+- Shortcuts: All styles: `j`/`k` or arrows move, `gg`/`G` first and last, `Enter` expands the selected task, `.` opens the task menu, `s` then `i`/`n`/`w`/`s`/`d`/`a` sets status, `[`/`]` lowers or raises priority one step (None to Urgent, no wrap; off when Priorities are disabled), `Ctrl+C` copies the title, `Ctrl+Click`/`Shift+Click` selects. Vim: `e` edit, `x` toggle done, `dd` delete, `yy` copy title, `yi` copy with description. Standard: `Shift+Enter` edit, `e` toggle done, `x` select, `F2` rename, `#` delete, `z` undo. Emacs: `Ctrl+N`/`Ctrl+P` move, `Ctrl+E` edit, `Ctrl+T` toggle done, `Ctrl+D` delete, `Ctrl+.` task menu.
+- Code: `apps/desktop/src/contexts/keybinding-context.tsx`, `apps/desktop/src/components/views/list/task-list-scope.ts`, `apps/desktop/src/lib/priority-step.ts`
+- Checks: `e2e/keyboard-ui-compat.spec.ts`, `e2e/task-copy-title.spec.ts`, `apps/desktop/src/contexts/keybinding-context.test.tsx`, `apps/desktop/src/contexts/keybinding-copy.test.tsx`, `apps/desktop/src/contexts/keybinding-priority.test.tsx`, `apps/desktop/src/lib/priority-step.test.ts`, `apps/desktop/src/components/views/list/task-list-scope.test.tsx`
 - Notes: Keys are ignored while an editor, menu, listbox, or modal owns focus. Toggling done on a done task moves it to Inbox.
 
 ## Keyboard shortcuts help

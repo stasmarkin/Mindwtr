@@ -1888,6 +1888,83 @@ describe('TaskItem', () => {
         expect(getByRole('textbox', { name: /rename task/i })).toHaveValue('Test Task');
     });
 
+    describe('priority step row actions', () => {
+        const stepTask = (overrides: Partial<Task> = {}): Task => ({ ...mockTask, id: 'priority-step-task', status: 'next', ...overrides });
+        const renderStep = (task: Task, props: { readOnly?: boolean } = {}) => {
+            const updateTask = vi.fn(async () => ({ success: true }));
+            act(() => {
+                useTaskStore.setState(() => ({ tasks: [task], _allTasks: [task], projects: [], _allProjects: [], updateTask }));
+            });
+            const { container } = render(<LanguageProvider><TaskItem task={task} {...props} /></LanguageProvider>);
+            const row = container.querySelector(`[data-task-id="${task.id}"]`)!;
+            const dispatch = (detail: string) => fireEvent(row, new CustomEvent('mindwtr:task-row-action', { detail }));
+            return { updateTask, dispatch };
+        };
+
+        it('raises and lowers the priority by one step', () => {
+            const { updateTask, dispatch } = renderStep(stepTask({ priority: 'medium' }));
+
+            dispatch('raise-priority');
+            dispatch('lower-priority');
+
+            expect(updateTask.mock.calls).toEqual([
+                ['priority-step-task', { priority: 'high' }],
+                ['priority-step-task', { priority: 'low' }],
+            ]);
+        });
+
+        it('clears the priority when lowering from low', () => {
+            const lowered = renderStep(stepTask({ priority: 'low' }));
+            lowered.dispatch('lower-priority');
+            expect(lowered.updateTask).toHaveBeenCalledWith('priority-step-task', { priority: undefined });
+        });
+
+        it('sets low when raising a task without priority', () => {
+            const { updateTask, dispatch } = renderStep(stepTask());
+            dispatch('raise-priority');
+            expect(updateTask).toHaveBeenCalledWith('priority-step-task', { priority: 'low' });
+        });
+
+        it('does not raise past urgent', () => {
+            const urgent = renderStep(stepTask({ priority: 'urgent' }));
+            urgent.dispatch('raise-priority');
+            expect(urgent.updateTask).not.toHaveBeenCalled();
+        });
+
+        it('does not lower a task that has no priority', () => {
+            const { updateTask, dispatch } = renderStep(stepTask());
+            dispatch('lower-priority');
+            expect(updateTask).not.toHaveBeenCalled();
+        });
+
+        it('ignores priority steps on read-only tasks', () => {
+            const readOnly = renderStep(stepTask({ priority: 'low' }), { readOnly: true });
+            readOnly.dispatch('raise-priority');
+            expect(readOnly.updateTask).not.toHaveBeenCalled();
+        });
+
+        it('ignores priority steps on reference items', () => {
+            const { updateTask, dispatch } = renderStep(stepTask({ status: 'reference' }));
+            dispatch('raise-priority');
+            expect(updateTask).not.toHaveBeenCalled();
+        });
+
+        it('ignores priority steps on done tasks', () => {
+            const { updateTask, dispatch } = renderStep(stepTask({ status: 'done', priority: 'low' }));
+            dispatch('raise-priority');
+            expect(updateTask).not.toHaveBeenCalled();
+        });
+
+        it('ignores priority steps when priorities are disabled', () => {
+            act(() => {
+                useTaskStore.setState((state) => ({ settings: { ...state.settings, features: { ...state.settings.features, priorities: false } } }));
+            });
+            const { updateTask, dispatch } = renderStep(stepTask({ priority: 'low' }));
+            dispatch('raise-priority');
+            expect(updateTask).not.toHaveBeenCalled();
+        });
+    });
+
     it('does not add unclarified inbox tasks to today focus from the quick actions menu', () => {
         const inboxTask: Task = {
             ...mockTask,

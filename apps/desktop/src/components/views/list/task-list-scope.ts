@@ -216,6 +216,7 @@ export function createTaskListScope(deps: TaskListScopeDeps): TaskListScope {
         },
         toggleFocusSelected: () => requestRowAction('toggle-focus'),
         renameSelected: () => requestRowAction('rename-title'),
+        stepPrioritySelected: (step) => requestRowAction(step > 0 ? 'raise-priority' : 'lower-priority'),
         deleteSelected: () => {
             const task = selectedTask();
             if (!task) return;

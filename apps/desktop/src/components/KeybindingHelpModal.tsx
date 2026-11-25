@@ -36,6 +36,9 @@ export function KeybindingHelpModal({
     const isMac = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform);
     const primary = isMac ? 'Cmd' : 'Ctrl';
     const quickAddShortcutDisplay = formatGlobalQuickAddShortcutForDisplay(quickAddShortcut, isMac, t);
+    const priorityStepItems: HelpItem[] = prioritiesEnabled
+        ? [{ keys: '[ / ]', labelKey: 'keybindings.list.stepPriority', fallbackLabel: 'Lower / raise priority' }]
+        : [];
     const sharedGlobal: HelpItem[] = [
         { keys: quickAddShortcutDisplay, labelKey: 'keybindings.globalQuickAdd', fallbackLabel: 'Global quick add' },
         { keys: 'a', labelKey: 'keybindings.inAppQuickAdd', fallbackLabel: 'In-app quick add' },
@@ -87,6 +90,7 @@ export function KeybindingHelpModal({
         { keys: 'yy', labelKey: 'keybindings.list.copyTitle' },
         { keys: 'yi', labelKey: 'keybindings.list.copyWithDescription' },
         { keys: 'si / sn / sw / ss / sd / sa', labelKey: 'keybindings.list.setStatus', fallbackLabel: 'Set status: Inbox / Next / Waiting / Someday / Done / Archived' },
+        ...priorityStepItems,
         { keys: 'Insert', labelKey: 'keybindings.list.newTask', fallbackLabel: 'Focus add-task input' },
     ];
 
@@ -105,6 +109,7 @@ export function KeybindingHelpModal({
         { keys: `${primary}+Enter`, labelKey: 'keybindings.list.saveEdit' },
         { keys: 'Esc', labelKey: 'keybindings.list.cancelEdit' },
         { keys: 'si / sn / sw / ss / sd / sa', labelKey: 'keybindings.list.setStatus', fallbackLabel: 'Set status: Inbox / Next / Waiting / Someday / Done / Archived' },
+        ...priorityStepItems,
         { keys: 'Insert', labelKey: 'keybindings.list.newTask', fallbackLabel: 'Focus add-task input' },
     ];
 
@@ -141,6 +146,7 @@ export function KeybindingHelpModal({
         { keys: 'Ctrl+T', labelKey: 'keybindings.list.toggleDone' },
         { keys: 'Ctrl+D', labelKey: 'keybindings.list.delete' },
         { keys: 'si / sn / sw / ss / sd / sa', labelKey: 'keybindings.list.setStatus', fallbackLabel: 'Set status: Inbox / Next / Waiting / Someday / Done / Archived' },
+        ...priorityStepItems,
         { keys: 'Insert', labelKey: 'keybindings.list.newTask', fallbackLabel: 'Focus add-task input' },
     ];
 
